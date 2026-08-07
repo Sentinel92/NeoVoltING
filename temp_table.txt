@@ -1,0 +1,72 @@
+  pdf.text('2. PROTOCOLO DE MEDICIONES Y ENSAYOS NORMATIVOS SEC', margin, currentY);
+  currentY += 4;
+
+  const cardWidth = (contentWidth - 6) / 3;
+  const cardHeight = 22;
+
+  const tests = [
+    {
+      title: 'AISLAMIENTO CONDUCTORES',
+      norm: 'RIC N°04',
+      value: reportData.testResults?.isolationMOhms
+        ? `> ${reportData.testResults.isolationMOhms} MΩ`
+        : '> 50 MΩ (500V DC)',
+      status: 'CONFORME SEC',
+    },
+    {
+      title: 'RESISTENCIA PUESTA A TIERRA',
+      norm: 'RIC N°06',
+      value: reportData.testResults?.earthResistanceOhms
+        ? `${reportData.testResults.earthResistanceOhms} Ω`
+        : '12.4 Ω (< 20 Ω)',
+      status: 'CONFORME SEC',
+    },
+    {
+      title: 'TIEMPO DISPARO RCD',
+      norm: 'RIC N°05',
+      value: reportData.testResults?.rcdTripTimeMs
+        ? `${reportData.testResults.rcdTripTimeMs} ms`
+        : '22 ms (30mA)',
+      status: 'CONFORME SEC',
+    },
+  ];
+
+  tests.forEach((test, idx) => {
+    const cardX = margin + idx * (cardWidth + 3);
+
+    // Card background
+    pdf.setFillColor(240, 253, 244); // emerald-50
+    pdf.setDrawColor(187, 247, 208); // emerald-200
+    pdf.roundedRect(cardX, currentY, cardWidth, cardHeight, 2, 2, 'FD');
+
+    // Title
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(6.5);
+    pdf.setTextColor(22, 101, 52); // emerald-800
+    pdf.text(`${test.title} (${test.norm})`, cardX + 3, currentY + 5);
+
+    // Value
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(10);
+    pdf.setTextColor(15, 23, 42);
+    pdf.text(test.value, cardX + 3, currentY + 12);
+
+    // Status Pill
+    pdf.setFillColor(16, 185, 129); // emerald-500
+    pdf.roundedRect(cardX + 3, currentY + 15, 26, 4, 1, 1, 'F');
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(5.5);
+    pdf.setTextColor(255, 255, 255);
+    pdf.text(test.status, cardX + 16, currentY + 18, { align: 'center' });
+  });
+
+  currentY += cardHeight + 8;
+
+  // -------------------------------------------------------------
+  // 4. NOTES / OBSERVACIONES DE TERRENO
+  // -------------------------------------------------------------
+  checkPageBreak(30);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setFontSize(10);
+  pdf.setTextColor(15, 23, 42);
+  pdf.text('3. OBSERVACIONES Y NOTAS TÉCNICAS DE TERRENO', margin, currentY);

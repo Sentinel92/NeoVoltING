@@ -1,0 +1,101 @@
+  const simulateBoard = () => {
+    const msgs: string[] = [];
+    let hasError = false;
+
+    const isConnected = (t1: string, t2: string) => {
+      return wires.some(w => (w.fromTermId === t1 && w.toTermId === t2) || (w.toTermId === t1 && w.fromTermId === t2));
+    };
+
+    const isConnectedToAny = (t1: string, termPrefix: string) => {
+      return wires.some(w => 
+        (w.fromTermId === t1 && w.toTermId.startsWith(termPrefix)) || 
+        (w.toTermId === t1 && w.fromTermId.startsWith(termPrefix))
+      );
+    };
+
+    // Continuity checks
+    if (!isConnected('grid_out_l', 'iga_in_l')) { msgs.push('Falta conectar Fase de la Red al IGA.'); hasError = true; }
+    if (!isConnected('grid_out_n', 'iga_in_n')) { msgs.push('Falta conectar Neutro de la Red al IGA.'); hasError = true; }
+
+    if (!isConnected('iga_out_l', 'rcd_in_l')) { msgs.push('Falta puentear Fase del IGA al Diferencial RCD.'); hasError = true; }
+    if (!isConnected('iga_out_n', 'rcd_in_n')) { msgs.push('Falta puentear Neutro del IGA al Diferencial RCD.'); hasError = true; }
+
+    if (!isConnectedToAny('rcd_out_n', 'bar_n_')) { msgs.push('El Neutro de salida del Diferencial debe ir a la Barra de Neutro.'); hasError = true; }
+    if (!isConnectedToAny('grid_out_pe', 'bar_pe_')) { msgs.push('La Tierra de la Red debe ir a la Barra de Tierra (PE).'); hasError = true; }
+
+    const mcbs = components.filter(c => c.type === 'MCB');
+    mcbs.forEach((mcb, i) => {
+      const mcbOutL = mcb.terminals.find(t => t.position === 'bottom')?.id;
+      const mcbInL = mcb.terminals.find(t => t.position === 'top')?.id;
+      
+      if (mcbInL && !isConnected('rcd_out_l', mcbInL) && !isConnectedToAny(mcbInL, 'mcb_')) {
+        msgs.push(`Falta alimentación de Fase al Automático ${mcb.name}.`); hasError = true;
+      }
+      
+      // Find load that matches this MCB (simplistic index match for simulation)
+      const loadComp = components.filter(c => c.type === 'LOAD')[i];
+      if (loadComp && mcbOutL) {
+        const loadL = loadComp.terminals.find(t => t.type === 'L')?.id;
+        const loadN = loadComp.terminals.find(t => t.type === 'N')?.id;
+        const loadPE = loadComp.terminals.find(t => t.type === 'PE')?.id;
+        
+        if (loadL && !isConnected(mcbOutL, loadL)) { msgs.push(`El circuito "${loadComp.name}" no recibe Fase de su Automático.`); hasError = true; }
+        if (loadN && !isConnectedToAny(loadN, 'bar_n_')) { msgs.push(`Falta conectar el Neutro del circuito "${loadComp.name}".`); hasError = true; }
+        if (loadPE && !isConnectedToAny(loadPE, 'bar_pe_')) { msgs.push(`Falta conectar la Tierra del circuito "${loadComp.name}".`); hasError = true; }
+      }
+    });
+
+    const normCheck = checkNorms();
+    if (!normCheck.isOk) {
+      hasError = true;
+      msgs.push(...normCheck.msgs);
+    }
+
+    if (hasError) {
+      setSimulationState('error');
+      setSimulationMessages(msgs);
+    } else {
+      setSimulationState('success');
+      setSimulationMessages(['¡Auditoría SEC exitosa! El tablero simulado tiene continuidad, cableado correcto y cumple Normativa RIC N°03 y RIC N°04.']);
+    }
+  };
+
+  const getTerminalAbsoluteCoords = (compId: string, termId: string) => {
+    const comp = components.find(c => c.id === compId);
+    if (!comp) return {x:0, y:0};
+    const term = comp.terminals.find(t => t.id === termId);
+    if (!term) return {x:0, y:0};
+    return { x: comp.x + term.x, y: comp.y + term.y };
+  };
+
+  const getWirePath = (x1: number, y1: number, x2: number, y2: number) => {
+    const dy = Math.abs(y2 - y1) * 0.4;
+    return `M ${x1} ${y1} C ${x1} ${y1 + dy}, ${x2} ${y2 - dy}, ${x2} ${y2}`;
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-100 p-4 md:p-8 font-sans">
+      <div className="max-w-7xl mx-auto space-y-6">
+        
+        <header className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2 text-fuchsia-400 text-xs font-bold uppercase tracking-wider mb-1">
+              <MonitorPlay className="w-4 h-4" />
+              <span>Simulador Didáctico e Interactivo</span>
+            </div>
+            <h1 className="text-2xl font-black text-white tracking-tight">Armado de Tablero y Validaciones RIC</h1>
+            <p className="text-xs text-slate-400 mt-1">
+              Arrastra componentes (Drag & Drop), conecta terminales haciendo clic y valida normativamente el diseño.
+            </p>
+          </div>
+        </header>
+
+        <div className="grid grid-cols-1 xl:grid-cols-4 gap-6">
+          {/* LEFT PANEL: CONTROLS */}
+          <div className="xl:col-span-1 space-y-6">
+            
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <Database className="w-4 h-4 text-emerald-400" />
+                <span>Base de Datos y Diseño</span>
+              </h3>

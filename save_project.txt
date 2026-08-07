@@ -1,0 +1,91 @@
+  const handleSaveProject = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!projectTitle.trim()) {
+      alert('Por favor ingrese un título para el proyecto.');
+      return;
+    }
+    if (!clientDetails.name.trim() || !clientDetails.address.trim()) {
+      alert('Por favor complete el nombre y dirección del cliente.');
+      return;
+    }
+
+    // Save client to clients database if new
+    if (selectedClientId === 'NEW' || !clients.some((c) => c.email === clientDetails.email && c.name === clientDetails.name)) {
+      const newClientRecord: ClientRecord = {
+        id: Date.now().toString(),
+        name: clientDetails.name,
+        rut: clientDetails.rut || '12.345.678-9',
+        email: clientDetails.email || '',
+        phone: clientDetails.phone || '',
+        address: clientDetails.address || '',
+        city: clientDetails.city || 'Santiago',
+        propertyType: clientDetails.propertyType || 'Residencial',
+        notes: `Cliente registrado desde Proyecto ${projectCode}`,
+        createdAt: new Date().toLocaleDateString('es-CL'),
+      };
+      setClients([newClientRecord, ...clients]);
+    }
+
+    const now = new Date().toLocaleDateString('es-CL');
+
+    // If budgetMode is WITHOUT_MATERIALS, filter out materials items or keep only labor
+    const finalScopeItems = budgetMode === 'WITHOUT_MATERIALS' ? laborItems : scopeItems;
+
+    if (editingProject) {
+      const updated: ElectricalProject = {
+        ...editingProject,
+        code: projectCode,
+        title: projectTitle,
+        projectType: selectedServiceType as ProjectType,
+        status: projectStatus,
+        client: { ...clientDetails },
+        description: projectDescription,
+        attachments: [...attachments],
+        scopeItems: [...finalScopeItems],
+        materialsPrice: totalMaterials,
+        laborPrice: totalLabor,
+        totalPrice: totalConIva,
+        includeTaxIVA: includeTaxIVA,
+        notes: projectNotes,
+        updatedAt: now,
+        targetDeadline: targetDeadline,
+      };
+      setProjects(projects.map((p) => (p.id === editingProject.id ? updated : p)));
+    } else {
+      const created: ElectricalProject = {
+        id: Date.now().toString(),
+        code: projectCode,
+        title: projectTitle,
+        projectType: selectedServiceType as ProjectType,
+        status: projectStatus,
+        client: { ...clientDetails },
+        description: projectDescription,
+        attachments: [...attachments],
+        scopeItems: [...finalScopeItems],
+        materialsPrice: totalMaterials,
+        laborPrice: totalLabor,
+        totalPrice: totalConIva,
+        includeTaxIVA: includeTaxIVA,
+        notes: projectNotes,
+        createdAt: now,
+        updatedAt: now,
+        targetDeadline: targetDeadline,
+      };
+      setProjects([created, ...projects]);
+    }
+
+    setIsModalOpen(false);
+  };
+
+  const handleDeleteProject = (id: string) => {
+    const found = projects.find((p) => p.id === id);
+    if (found) {
+      setProjectToDelete(found);
+    }
+  };
+
+  const confirmDeleteProject = () => {
+    if (!projectToDelete) return;
+    const deletedTitle = projectToDelete.title;
+    setProjects((prev) => prev.filter((p) => p.id !== projectToDelete.id));
+    showToast(`Proyecto "${deletedTitle}" eliminado correctamente.`);

@@ -1,0 +1,18 @@
+{
+  "name": "NEOVOLT SEC - Ingeniero Eléctrico & Automatización",
+  "short_name": "NEOVOLT SEC",
+  "description": "Calculadora, Cubicador de Planos IA, Cotizador y Declarador TE1 SEC para Ingenieros en Electricidad y Automatización Industrial",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

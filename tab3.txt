@@ -1,0 +1,753 @@
+                  activeModalTab === 'scope_quote'
+                    ? 'bg-fuchsia-600 text-white shadow-md'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                }`}
+              >
+                <Calculator className="w-3.5 h-3.5" />
+                <span>3. Calculador de Presupuesto (${totalConIva.toLocaleString('es-CL')})</span>
+              </button>
+              {editingProject && (
+                <button
+                  type="button"
+                  onClick={() => setActiveModalTab('history')}
+                  className={`px-3.5 py-2 rounded-xl transition-all flex items-center gap-1.5 shrink-0 ${
+                    activeModalTab === 'history'
+                      ? 'bg-fuchsia-600 text-white shadow-md'
+                      : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                  }`}
+                >
+                  <Clock className="w-3.5 h-3.5" />
+                  <span>4. Historial de Versiones</span>
+                </button>
+              )}
+            </div>
+
+            <form onSubmit={handleSaveProject} className="space-y-6">
+              {/* TAB 1: CLIENT & PROJECT INFO */}
+              {activeModalTab === 'client_info' && (
+                <div className="space-y-4">
+                  {/* Select Client */}
+                  <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                        <Users className="w-4 h-4 text-fuchsia-400" />
+                        <span>Seleccionar o Registrar Cliente</span>
+                      </label>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <select
+                          value={selectedClientId}
+                          onChange={(e) => handleClientSelectChange(e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-fuchsia-500"
+                        >
+                          <option value="">-- Seleccionar de la Base de Datos --</option>
+                          {clients.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.name} ({c.rut}) - {c.city}
+                            </option>
+                          ))}
+                          <option value="NEW">➕ Registrar Nuevo Cliente</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <input
+                          type="text"
+                          value={clientDetails.name}
+                          onChange={(e) => setClientDetails({ ...clientDetails, name: e.target.value })}
+                          placeholder="Nombre Completo / Razon Social *"
+                          required
+                          className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-fuchsia-500"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
+                      <input
+                        type="text"
+                        value={clientDetails.rut || ''}
+                        onChange={(e) => setClientDetails({ ...clientDetails, rut: e.target.value })}
+                        placeholder="RUT (ej: 15.482.910-3)"
+                        className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-fuchsia-500"
+                      />
+
+                      <input
+                        type="text"
+                        value={clientDetails.address}
+                        onChange={(e) => setClientDetails({ ...clientDetails, address: e.target.value })}
+                        placeholder="Dirección Inmueble *"
+                        required
+                        className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-fuchsia-500"
+                      />
+
+                      <input
+                        type="text"
+                        value={clientDetails.phone}
+                        onChange={(e) => setClientDetails({ ...clientDetails, phone: e.target.value })}
+                        placeholder="Teléfono (+56 9 ...)"
+                        className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-fuchsia-500"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Project Details */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[11px] font-bold text-slate-300 block mb-1">Código Proyecto:</label>
+                      <input
+                        type="text"
+                        value={projectCode}
+                        onChange={(e) => setProjectCode(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-fuchsia-400 font-mono font-bold"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] font-bold text-slate-300 block mb-1">Estado Actual:</label>
+                      <select
+                        value={projectStatus}
+                        onChange={(e) => setProjectStatus(e.target.value as any)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white"
+                      >
+                        <option value="COTIZACION">⏳ En Cotización</option>
+                        <option value="APROBADO">✅ Aprobado por Cliente</option>
+                        <option value="EN_EJECUCION">⚡ En Ejecución / Trabajo</option>
+                        <option value="COMPLETADO">🏆 Completado & Entregado</option>
+                        <option value="CANCELADO">❌ Cancelado</option>
+                      </select>
+                    </div>
+
+                    <div className="sm:col-span-2">
+                      <label className="text-[11px] font-bold text-slate-300 block mb-1">Título del Trabajo / Proyecto *:</label>
+                      <input
+                        type="text"
+                        value={projectTitle}
+                        onChange={(e) => setProjectTitle(e.target.value)}
+                        placeholder="Ej: Mantención preventiva tablero, Detección de falla o Cambio de accesorios"
+                        required
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-fuchsia-500"
+                      />
+                    </div>
+
+                    {/* SELECT DYNAMIC SERVICE TYPE */}
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-[11px] font-bold text-slate-300">Tipo de Servicio Personalizado:</label>
+                        <button
+                          type="button"
+                          onClick={() => setIsServiceTypesModalOpen(true)}
+                          className="text-[10px] text-fuchsia-400 hover:underline flex items-center gap-1"
+                        >
+                          <Settings className="w-3 h-3" />
+                          <span>Editar lista</span>
+                        </button>
+                      </div>
+                      <select
+                        value={selectedServiceType}
+                        onChange={(e) => handleServiceTypeChange(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-fuchsia-300 font-bold"
+                      >
+                        {serviceTypes.map((st) => (
+                          <option key={st.id} value={st.name}>
+                            {st.name}
+                          </option>
+                        ))}
+                      </select>
+                      {serviceTypes.find((s) => s.name === selectedServiceType)?.description && (
+                        <p className="text-[10px] text-slate-400 mt-1 italic">
+                          {serviceTypes.find((s) => s.name === selectedServiceType)?.description}
+                        </p>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] font-bold text-slate-300 block mb-1">Fecha Estimada de Entrega:</label>
+                      <input
+                        type="date"
+                        value={targetDeadline}
+                        onChange={(e) => setTargetDeadline(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white"
+                      />
+                    </div>
+
+                    <div className="sm:col-span-2">
+                      <label className="text-[11px] font-bold text-slate-300 block mb-1">Descripción / Solicitud del Cliente:</label>
+                      <textarea
+                        value={projectDescription}
+                        onChange={(e) => setProjectDescription(e.target.value)}
+                        rows={3}
+                        placeholder="Describe la necesidad del cliente: mantención preventiva, falla en automáticos, cambio de interruptores, etc."
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-fuchsia-500"
+                      ></textarea>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 2: ATTACHMENTS & DOCUMENTS */}
+              {activeModalTab === 'attachments' && (
+                <div className="space-y-4">
+                  <div className="bg-slate-950 border-2 border-dashed border-slate-800 hover:border-fuchsia-500/50 rounded-2xl p-6 text-center space-y-3 transition-colors">
+                    <Upload className="w-8 h-8 text-fuchsia-400 mx-auto animate-bounce" />
+                    <div>
+                      <h4 className="text-xs font-bold text-white">Adjuntar Archivos, Planos o Fotos del Trabajo</h4>
+                      <p className="text-[11px] text-slate-400">
+                        Sube imágenes del tablero actual, fotos de artefactos a reemplazar, bocetos, planos o documentos del cliente.
+                      </p>
+                    </div>
+                    <label className="inline-flex items-center gap-2 bg-fuchsia-600 hover:bg-fuchsia-500 text-white font-bold text-xs px-4 py-2 rounded-xl cursor-pointer shadow transition-all">
+                      <Upload className="w-3.5 h-3.5" />
+                      <span>Seleccionar Archivos</span>
+                      <input type="file" multiple onChange={handleFileUpload} className="hidden" />
+                    </label>
+                  </div>
+
+                  {/* List of Attachments */}
+                  {attachments.length === 0 ? (
+                    <div className="text-center py-6 text-slate-500 text-xs italic">
+                      No hay archivos adjuntos aún para este proyecto.
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-60 overflow-y-auto pr-1">
+                      {attachments.map((att) => (
+                        <div
+                          key={att.id}
+                          className="bg-slate-950 border border-slate-800 rounded-xl p-3 flex items-center justify-between gap-3 shadow"
+                        >
+                          <div className="flex items-center gap-3 overflow-hidden">
+                            {att.type.startsWith('image/') ? (
+                              <img
+                                src={att.dataUrl}
+                                alt={att.name}
+                                className="w-10 h-10 object-cover rounded-lg border border-slate-700 shrink-0"
+                              />
+                            ) : (
+                              <div className="w-10 h-10 bg-slate-800 rounded-lg flex items-center justify-center text-fuchsia-400 shrink-0 font-bold text-xs">
+                                PDF
+                              </div>
+                            )}
+                            <div className="truncate text-xs">
+                              <div className="font-bold text-slate-200 truncate">{att.name}</div>
+                              <div className="text-[10px] text-slate-500">
+                                {Math.round(att.sizeBytes / 1024)} KB - {att.uploadedAt}
+                              </div>
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveAttachment(att.id)}
+                            className="text-slate-500 hover:text-rose-400 p-1.5 rounded-lg hover:bg-slate-900 transition-colors shrink-0"
+                            title="Eliminar adjunto"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* TAB 3: BUDGET CALCULATOR (CON / SIN MATERIALES) */}
+              {activeModalTab === 'scope_quote' && (
+                <div className="space-y-5">
+                  {/* MODE SELECTOR TOGGLE: CON MATERIALES VS SIN MATERIALES */}
+                  <div className="bg-slate-950 p-3.5 rounded-2xl border border-slate-800 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-extrabold text-white flex items-center gap-2">
+                        <Calculator className="w-4 h-4 text-fuchsia-400" />
+                        <span>Modalidad de Calculador de Presupuesto:</span>
+                      </span>
+
+                      <div className="flex items-center bg-slate-900 p-1 rounded-xl border border-slate-800 text-xs">
+                        <button
+                          type="button"
+                          onClick={() => setBudgetMode('WITH_MATERIALS')}
+                          className={`px-3 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1.5 ${
+                            budgetMode === 'WITH_MATERIALS'
+                              ? 'bg-fuchsia-600 text-white shadow'
+                              : 'text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          <Package className="w-3.5 h-3.5" />
+                          <span>Con Materiales</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setBudgetMode('WITHOUT_MATERIALS')}
+                          className={`px-3 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1.5 ${
+                            budgetMode === 'WITHOUT_MATERIALS'
+                              ? 'bg-indigo-600 text-white shadow'
+                              : 'text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          <Wrench className="w-3.5 h-3.5" />
+                          <span>Sin Materiales (Solo M.O.)</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <p className="text-[11px] text-slate-400">
+                      {budgetMode === 'WITH_MATERIALS'
+                        ? 'Permite desglosar y editar valores de lista de materiales/artefactos e incluir el costo de mano de obra.'
+                        : 'Calcula exclusivamente la mano de obra / servicio técnico sin incluir materiales ni insumos.'}
+                    </p>
+                  </div>
+
+                  {/* SECTION 1: MATERIALS ITEMIZER (Visible ONLY when budgetMode === 'WITH_MATERIALS') */}
+                  {budgetMode === 'WITH_MATERIALS' && (
+                    <div className="space-y-3 bg-slate-950/60 p-4 rounded-2xl border border-slate-800">
+                      <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
+                        <div className="flex items-center gap-2 text-xs font-extrabold text-emerald-400">
+                          <Package className="w-4 h-4" />
+                          <span>1. Materiales e Insumos Editables</span>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={handleAddMaterialItem}
+                          className="bg-emerald-600/20 text-emerald-300 hover:bg-emerald-600 hover:text-white border border-emerald-500/30 text-[11px] font-bold px-3 py-1 rounded-xl transition-all flex items-center gap-1"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>Añadir Material</span>
+                        </button>
+                      </div>
+
+                      {materialItems.length === 0 ? (
+                        <div className="text-center py-4 text-slate-500 text-xs italic">
+                          No hay materiales agregados. Haz clic en "Añadir Material" para incluir insumos.
+                        </div>
+                      ) : (
+                        <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                          {/* Column Headers */}
+                          <div className="grid grid-cols-12 gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 py-1 bg-slate-900/50 rounded-lg">
+                            <span className="col-span-4">Descripción del Insumo</span>
+                            <span className="col-span-2">Categoría</span>
+                            <span className="col-span-2 text-center">Cantidad</span>
+                            <span className="col-span-2 text-right">Precio Unit. ($)</span>
+                            <span className="col-span-1 text-right">Subtotal</span>
+                            <span className="col-span-1 text-right"></span>
+                          </div>
+
+                          {materialItems.map((item) => {
+                            const subtotalItem = item.quantity * item.unitPrice;
+                            return (
+                              <div
+                                key={item.id}
+                                className="bg-slate-900 border border-slate-800 rounded-xl p-2.5 grid grid-cols-12 gap-2 items-center text-xs"
+                              >
+                                <div className="col-span-4">
+                                  <input
+                                    type="text"
+                                    value={item.description}
+                                    onChange={(e) => handleUpdateScopeItem(item.id, 'description', e.target.value)}
+                                    placeholder="Descripción del material"
+                                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-xs text-white"
+                                  />
+                                </div>
+
+                                <div className="col-span-2">
+                                  <select
+                                    value={item.category}
+                                    onChange={(e) => handleUpdateScopeItem(item.id, 'category', e.target.value as any)}
+                                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-1.5 py-1 text-[10px] text-emerald-400 font-bold"
+                                  >
+                                    <option value="MATERIALES">Materiales</option>
+                                    <option value="ARTEFACTOS">Artefactos</option>
+                                    <option value="PROTECCIONES">Protecciones</option>
+                                  </select>
+                                </div>
+
+                                <div className="col-span-2 flex items-center justify-center gap-1">
+                                  <input
+                                    type="number"
+                                    value={item.quantity}
+                                    onChange={(e) => handleUpdateScopeItem(item.id, 'quantity', Math.max(1, Number(e.target.value)))}
+                                    min={1}
+                                    className="w-12 bg-slate-950 border border-slate-800 rounded-lg px-1 py-1 text-xs text-white text-center font-bold"
+                                  />
+                                  <span className="text-[10px] text-slate-500 font-mono truncate">{item.unit}</span>
+                                </div>
+
+                                <div className="col-span-2 relative">
+                                  <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-[10px] text-slate-500 font-mono">$</span>
+                                  <input
+                                    type="number"
+                                    value={item.unitPrice}
+                                    onChange={(e) => handleUpdateScopeItem(item.id, 'unitPrice', Math.max(0, Number(e.target.value)))}
+                                    step={100}
+                                    className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-4 pr-1.5 py-1 text-xs text-emerald-400 font-bold text-right"
+                                  />
+                                </div>
+
+                                <div className="col-span-1 text-right font-mono text-[11px] font-extrabold text-emerald-400 truncate">
+                                  ${subtotalItem.toLocaleString('es-CL')}
+                                </div>
+
+                                <div className="col-span-1 text-right">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveScopeItem(item.id)}
+                                    className="text-slate-500 hover:text-rose-400 p-1 transition-colors"
+                                    title="Eliminar ítem"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      <div className="flex justify-between items-center text-xs font-bold text-emerald-400 pt-1 border-t border-slate-800/80">
+                        <span className="text-slate-400 font-normal text-[11px]">Subtotal acumulado de materiales e insumos:</span>
+                        <span>Total Materiales: ${totalMaterials.toLocaleString('es-CL')} CLP</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* SECTION 2: LABOR & SERVICES ITEMIZER */}
+                  <div className="space-y-3 bg-slate-950/60 p-4 rounded-2xl border border-slate-800">
+                    <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
+                      <div className="flex items-center gap-2 text-xs font-extrabold text-fuchsia-400">
+                        <Wrench className="w-4 h-4" />
+                        <span>{budgetMode === 'WITH_MATERIALS' ? '2. Mano de Obra y Servicios' : 'Desglose de Mano de Obra y Servicios'}</span>
+                        <span className="text-[10px] font-normal bg-fuchsia-500/10 text-fuchsia-300 border border-fuchsia-500/30 px-2 py-0.5 rounded-full">
+                          ⚡ Recálculo Automático
+                        </span>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handleAddLaborItem}
+                        className="bg-fuchsia-600/20 text-fuchsia-300 hover:bg-fuchsia-600 hover:text-white border border-fuchsia-500/30 text-[11px] font-bold px-3 py-1 rounded-xl transition-all flex items-center gap-1"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Añadir Servicio / M.O.</span>
+                      </button>
+                    </div>
+
+                    {laborItems.length === 0 ? (
+                      <div className="text-center py-4 text-slate-500 text-xs italic">
+                        No hay ítems de mano de obra. Haz clic en "Añadir Servicio / M.O." para costear la mano de obra.
+                      </div>
+                    ) : (
+                      <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                        {/* Column Headers */}
+                        <div className="grid grid-cols-12 gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 py-1 bg-slate-900/50 rounded-lg">
+                          <span className="col-span-4">Descripción del Servicio</span>
+                          <span className="col-span-2">Categoría</span>
+                          <span className="col-span-2 text-center">Cantidad</span>
+                          <span className="col-span-2 text-right">Precio Unit. ($)</span>
+                          <span className="col-span-1 text-right">Subtotal</span>
+                          <span className="col-span-1 text-right"></span>
+                        </div>
+
+                        {laborItems.map((item) => {
+                          const subtotalLaborItem = item.quantity * item.unitPrice;
+                          return (
+                            <div
+                              key={item.id}
+                              className="bg-slate-900 border border-slate-800 rounded-xl p-2.5 grid grid-cols-12 gap-2 items-center text-xs"
+                            >
+                              <div className="col-span-4">
+                                <input
+                                  type="text"
+                                  value={item.description}
+                                  onChange={(e) => handleUpdateScopeItem(item.id, 'description', e.target.value)}
+                                  placeholder="Descripción del servicio o tarea"
+                                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-xs text-white"
+                                />
+                              </div>
+
+                              <div className="col-span-2">
+                                <select
+                                  value={item.category}
+                                  onChange={(e) => handleUpdateScopeItem(item.id, 'category', e.target.value as any)}
+                                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-1.5 py-1 text-[10px] text-fuchsia-300 font-bold"
+                                >
+                                  <option value="MANO_DE_OBRA">Mano de Obra</option>
+                                  <option value="REVISION_TECNICA">Revisión SEC</option>
+                                  <option value="TRAMITES_SEC">Trámites SEC</option>
+                                </select>
+                              </div>
+
+                              <div className="col-span-2 flex items-center justify-center gap-1">
+                                <input
+                                  type="number"
+                                  value={item.quantity}
+                                  onChange={(e) => handleUpdateScopeItem(item.id, 'quantity', Math.max(1, Number(e.target.value)))}
+                                  min={1}
+                                  className="w-10 bg-slate-950 border border-slate-800 rounded-lg px-1 py-1 text-xs text-white text-center font-bold"
+                                />
+                                <input
+                                  type="text"
+                                  value={item.unit}
+                                  onChange={(e) => handleUpdateScopeItem(item.id, 'unit', e.target.value)}
+                                  className="w-10 bg-slate-950 border border-slate-800 rounded-lg px-1 py-1 text-[10px] text-slate-400 font-mono text-center"
+                                />
+                              </div>
+
+                              <div className="col-span-2 relative">
+                                <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-[10px] text-slate-500 font-mono">$</span>
+                                <input
+                                  type="number"
+                                  value={item.unitPrice}
+                                  onChange={(e) => handleUpdateScopeItem(item.id, 'unitPrice', Math.max(0, Number(e.target.value)))}
+                                  step={500}
+                                  className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-4 pr-1.5 py-1 text-xs text-fuchsia-300 font-bold text-right"
+                                />
+                              </div>
+
+                              <div className="col-span-1 text-right font-mono text-[11px] font-extrabold text-fuchsia-400 truncate">
+                                ${subtotalLaborItem.toLocaleString('es-CL')}
+                              </div>
+
+                              <div className="col-span-1 text-right">
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveScopeItem(item.id)}
+                                  className="text-slate-500 hover:text-rose-400 p-1 transition-colors"
+                                  title="Eliminar ítem"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    <div className="flex justify-between items-center text-xs font-bold text-fuchsia-400 pt-1 border-t border-slate-800/80">
+                      <span className="text-slate-400 font-normal text-[11px]">Subtotal acumulado de servicios:</span>
+                      <span>Total Mano de Obra: ${totalLabor.toLocaleString('es-CL')} CLP</span>
+                    </div>
+                  </div>
+
+                  {/* TOTAL BREAKDOWN SUMMARY CARD */}
+                  <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-2.5">
+                    {budgetMode === 'WITH_MATERIALS' && (
+                      <div className="flex items-center justify-between text-xs text-slate-400">
+                        <span>Total Materiales:</span>
+                        <span className="font-mono text-slate-200">${totalMaterials.toLocaleString('es-CL')} CLP</span>
+                      </div>
+                    )}
+
+                    <div className="flex items-center justify-between text-xs text-slate-400">
+                      <span>Total Mano de Obra / Servicios:</span>
+                      <span className="font-mono text-slate-200">${totalLabor.toLocaleString('es-CL')} CLP</span>
+                    </div>
+
+                    <div className="flex items-center justify-between text-xs text-slate-300 font-bold pt-1 border-t border-slate-800/80">
+                      <span>Subtotal Neto:</span>
+                      <span className="font-mono">${subtotalNeto.toLocaleString('es-CL')} CLP</span>
+                    </div>
+
+                    <div className="flex items-center justify-between text-xs text-slate-300">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={includeTaxIVA}
+                          onChange={(e) => setIncludeTaxIVA(e.target.checked)}
+                          className="rounded text-fuchsia-600 focus:ring-fuchsia-500"
+                        />
+                        <span>Agregar IVA (19% Factura):</span>
+                      </label>
+                      <span className="font-mono font-bold">${ivaMonto.toLocaleString('es-CL')} CLP</span>
+                    </div>
+
+                    <div className="flex items-center justify-between text-base font-extrabold text-emerald-400 pt-2 border-t border-slate-800">
+                      <span className="flex items-center gap-1.5">
+                        <Sparkles className="w-4 h-4 text-fuchsia-400" />
+                        <span>Monto Total Presupuestado:</span>
+                      </span>
+                      <span className="text-lg font-mono">${totalConIva.toLocaleString('es-CL')} CLP</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Form Navigation / Submit Footer */}
+              <div className="flex items-center justify-between pt-4 border-t border-slate-800">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsModalOpen(false)}
+                    className="bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs px-4 py-2.5 rounded-xl transition-all"
+                  >
+                    Cancelar
+                  </button>
+
+                  {editingProject && (
+                    <button
+                      type="button"
+                      onClick={() => setProjectToDelete(editingProject)}
+                      className="bg-rose-950/60 hover:bg-rose-900 border border-rose-800/60 text-rose-300 font-bold text-xs px-3.5 py-2.5 rounded-xl transition-all flex items-center gap-1.5"
+                    >
+                      <Trash2 className="w-4 h-4 text-rose-400" />
+                      <span>Eliminar Proyecto</span>
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {activeModalTab !== 'scope_quote' ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setActiveModalTab(activeModalTab === 'client_info' ? 'attachments' : 'scope_quote')
+                      }
+                      className="bg-fuchsia-600 hover:bg-fuchsia-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow transition-all flex items-center gap-1.5"
+                    >
+                      <span>Siguiente paso</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </button>
+                  ) : (
+                    <button
+                      type="submit"
+                      className="bg-gradient-to-r from-fuchsia-600 to-indigo-600 hover:from-fuchsia-500 hover:to-indigo-500 text-white font-extrabold text-xs px-5 py-2.5 rounded-xl shadow-lg shadow-fuchsia-600/30 transition-all active:scale-95"
+                    >
+                      <span>{editingProject ? 'Guardar Cambios' : 'Guardar Proyecto & Cotización'}</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* HIDDEN PRINT / PDF SHEET FOR PROJECT QUOTATION */}
+      {previewProject && (
+        <div className="hidden">
+          <div ref={pdfPrintRef} className="p-8 bg-white text-slate-900 space-y-6 max-w-2xl mx-auto font-sans">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b-2 border-slate-900 pb-4">
+              <div>
+                <h1 className="text-2xl font-black text-slate-900 uppercase tracking-tight">COTIZACIÓN DE SERVICIO</h1>
+                <p className="text-xs font-bold text-fuchsia-600 font-mono">
+                  {previewProject.code} - {previewProject.createdAt}
+                </p>
+              </div>
+              <div className="text-right">
+                <div className="text-sm font-bold text-slate-800">{contractor.companyName}</div>
+                <div className="text-xs text-slate-600">Licencia SEC: {contractor.secLicense} ({contractor.secClass})</div>
+                <div className="text-xs text-slate-600">{contractor.phone} | {contractor.senderEmail}</div>
+              </div>
+            </div>
+
+            {/* Client & Scope Details */}
+            <div className="grid grid-cols-2 gap-4 bg-slate-100 p-4 rounded-xl border border-slate-300 text-xs">
+              <div>
+                <div className="font-bold text-slate-500 uppercase text-[10px]">CLIENTE:</div>
+                <div className="font-extrabold text-slate-900">{previewProject.client.name}</div>
+                <div>RUT: {previewProject.client.rut || 'N/A'}</div>
+                <div>Dirección: {previewProject.client.address}</div>
+                <div>Teléfono: {previewProject.client.phone}</div>
+              </div>
+
+              <div>
+                <div className="font-bold text-slate-500 uppercase text-[10px]">TIPO DE TRABAJO:</div>
+                <div className="font-extrabold text-slate-900">{previewProject.projectType}</div>
+                <div className="mt-1 font-semibold">{previewProject.title}</div>
+                {previewProject.targetDeadline && <div>Fecha Entrega Estimada: {previewProject.targetDeadline}</div>}
+              </div>
+            </div>
+
+            {/* Scope Items Table */}
+            <table className="w-full text-xs text-left border-collapse">
+              <thead>
+                <tr className="border-b-2 border-slate-800 text-slate-700 font-bold uppercase text-[10px]">
+                  <th className="py-2">Descripción del Ítem / Trabajo</th>
+                  <th className="py-2 text-center">Cant.</th>
+                  <th className="py-2 text-right">P. Unitario</th>
+                  <th className="py-2 text-right">Total</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                {previewProject.scopeItems.map((item) => (
+                  <tr key={item.id}>
+                    <td className="py-2.5 font-medium">{item.description}</td>
+                    <td className="py-2.5 text-center font-bold">{item.quantity} {item.unit}</td>
+                    <td className="py-2.5 text-right font-mono">${item.unitPrice.toLocaleString('es-CL')}</td>
+                    <td className="py-2.5 text-right font-mono font-bold">${(item.quantity * item.unitPrice).toLocaleString('es-CL')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            {/* Totals */}
+            <div className="flex justify-end pt-4 border-t-2 border-slate-900">
+              <div className="w-1/2 space-y-1 text-xs">
+                {previewProject.materialsPrice > 0 && (
+                  <div className="flex justify-between text-slate-600">
+                    <span>Total Materiales:</span>
+                    <span className="font-mono">${previewProject.materialsPrice.toLocaleString('es-CL')} CLP</span>
+                  </div>
+                )}
+                {previewProject.laborPrice > 0 && (
+                  <div className="flex justify-between text-slate-600">
+                    <span>Total Mano de Obra:</span>
+                    <span className="font-mono">${previewProject.laborPrice.toLocaleString('es-CL')} CLP</span>
+                  </div>
+                )}
+                <div className="flex justify-between font-bold text-slate-900 text-sm border-t border-slate-300 pt-1">
+                  <span>TOTAL ESTIMADO:</span>
+                  <span className="font-mono">${previewProject.totalPrice.toLocaleString('es-CL')} CLP</span>
+                </div>
+                <p className="text-[10px] text-slate-500 mt-2">
+                  Cotización válida por 30 días. Cumple con exigencias Pliegos Técnicos Normativos RIC SEC N°01-N°11.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* DELETE CONFIRMATION MODAL */}
+      <ConfirmActionDialog
+        isOpen={!!projectToDelete}
+        title={`¿Eliminar Proyecto ${projectToDelete?.code || ''}?`}
+        description={
+          <>
+            ¿Estás seguro de que deseas eliminar permanentemente el proyecto <strong className="text-white">"{projectToDelete?.title}"</strong> del cliente <strong className="text-white">{projectToDelete?.client.name}</strong>? Esta acción borrará el presupuesto, ítems y archivos adjuntos.
+          </>
+        }
+        confirmText="Sí, Eliminar Definitivamente"
+        cancelText="Cancelar"
+        isDanger={true}
+        onConfirm={confirmDeleteProject}
+        onClose={() => setProjectToDelete(null)}
+      />
+
+      {/* PROJECT PHOTO GALLERY MODAL */}
+      {galleryProject && (
+        <ProjectPhotoGallery
+          project={galleryProject}
+          onClose={() => setGalleryProject(null)}
+          onUpdateProjectAttachments={(projectId, updatedAttachments) => {
+            setProjects((prev) =>
+              prev.map((p) => (p.id === projectId ? { ...p, attachments: updatedAttachments } : p))
+            );
+            setGalleryProject((prev) =>
+              prev && prev.id === projectId ? { ...prev, attachments: updatedAttachments } : prev
+            );
+          }}
+        />
+      )}
+
+      {/* FLOATING TOAST FEEDBACK */}
+      {toastMessage && (
+        <div className="fixed bottom-6 right-6 z-50 bg-slate-900 border border-slate-700 text-slate-200 px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-2 text-xs font-bold animate-slideUp">
+          <Check className="w-4 h-4 text-emerald-400" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
+    </div>
+  );
+};
