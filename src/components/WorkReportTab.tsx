@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { WorkReportData, CustomerDetails, ContractorConfig, RoomData, HighAppliance } from '../types';
 import { NeovoltLogo } from './NeovoltLogo';
-import { Sparkles, Camera, Send, Mail, Copy, Check, FileCheck, ShieldCheck, Printer, Download, Loader2, Trash2 } from 'lucide-react';
+import { Sparkles, Camera, Send, Mail, Copy, Check, FileCheck, ShieldCheck, Printer, Download, Loader2, Trash2, AlertTriangle, CheckCircle2, ShieldAlert, Activity, XCircle, Zap } from 'lucide-react';
 import { downloadPdfFromElement, generatePdfBlob } from '../utils/pdfGenerator';
 import { exportWorkReportToJsPdf } from '../utils/workReportPdfExporter';
 
@@ -24,6 +24,25 @@ export const WorkReportTab: React.FC<WorkReportTabProps> = ({
 }) => {
   const [loadingAi, setLoadingAi] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  // Grounding Resistance Diagnostic Tool State (RIC N°06 limit: 20 Ohms)
+  const [groundResistance, setGroundResistance] = useState<number>(
+    reportData.testResults?.earthResistanceOhms ?? 12.4
+  );
+
+  const handleUpdateGroundResistance = (val: number) => {
+    const num = Math.max(0.1, Math.round(val * 10) / 10);
+    setGroundResistance(num);
+    setReportData((prev) => ({
+      ...prev,
+      testResults: {
+        ...(prev.testResults || { isolationMOhms: 50, earthResistanceOhms: 12.4, rcdTripTimeMs: 22 }),
+        earthResistanceOhms: num,
+      },
+    }));
+  };
+
+  const isGroundCompliant = groundResistance <= 20.0;
 
   const handleSimulatePhoto = () => {
     // Sample photo
@@ -195,7 +214,7 @@ Atentamente,
             className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow transition-all active:scale-95"
           >
             {isGeneratingPdf ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-            <span>{isGeneratingPdf ? 'Generando PDF...' : 'Generar PDF'}</span>
+            <span>{isGeneratingPdf ? 'Generando PDF...' : 'Exportar a PDF'}</span>
           </button>
 
           <button
@@ -237,20 +256,127 @@ Atentamente,
             />
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
-              <span className="text-[10px] text-slate-400 font-bold block">Aislamiento Conductores (RIC N°04)</span>
-              <span className="text-sm font-extrabold text-emerald-400">&gt; 50 MΩ (500V DC)</span>
+          {/* HERRAMIENTA DE DIAGNÓSTICO: RESISTENCIA PUESTA A TIERRA NORMATIVA RIC N°06 */}
+          <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800/80 pb-2.5">
+              <div className="flex items-center gap-2 text-sky-400 font-bold text-xs uppercase tracking-wider">
+                <Activity className="w-4 h-4 text-sky-400" />
+                <span>Herramienta de Diagnóstico • Puesta a Tierra (RIC N°06)</span>
+              </div>
+              <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
+                <span>Límite Máximo Normativo:</span>
+                <strong className="text-amber-400 font-mono font-bold">20.0 Ω</strong>
+              </div>
             </div>
 
-            <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
-              <span className="text-[10px] text-slate-400 font-bold block">Resistencia Puesta a Tierra (RIC N°06)</span>
-              <span className="text-sm font-extrabold text-emerald-400">12.4 Ω (&lt; 20 Ω)</span>
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
+              {/* Input Control & Quick Presets */}
+              <div className="md:col-span-5 space-y-2">
+                <label className="block text-[11px] font-semibold text-slate-300">
+                  Valor Medido Telurómetro (Ohms / Ω):
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0.1"
+                    max="200"
+                    value={groundResistance}
+                    onChange={(e) => handleUpdateGroundResistance(parseFloat(e.target.value) || 0)}
+                    className="w-32 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono font-bold text-base focus:outline-none focus:border-sky-500 shadow-inner"
+                  />
+                  <span className="text-slate-400 font-mono text-sm font-bold">Ω</span>
+                </div>
+
+                <div className="flex items-center gap-1.5 pt-1">
+                  <span className="text-[10px] text-slate-400">Ejemplos:</span>
+                  <button
+                    type="button"
+                    onClick={() => handleUpdateGroundResistance(5.2)}
+                    className="text-[10px] bg-slate-800 hover:bg-slate-700 text-emerald-300 px-2 py-0.5 rounded border border-slate-700 font-mono"
+                  >
+                    5.2 Ω
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleUpdateGroundResistance(12.4)}
+                    className="text-[10px] bg-slate-800 hover:bg-slate-700 text-emerald-300 px-2 py-0.5 rounded border border-slate-700 font-mono"
+                  >
+                    12.4 Ω
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleUpdateGroundResistance(28.5)}
+                    className="text-[10px] bg-slate-800 hover:bg-rose-900/60 text-rose-300 px-2 py-0.5 rounded border border-rose-800/60 font-mono"
+                  >
+                    28.5 Ω
+                  </button>
+                </div>
+              </div>
+
+              {/* Status Badge & Diagnostic Conclusion */}
+              <div className="md:col-span-7">
+                <div
+                  className={`p-3.5 rounded-xl border transition-all flex flex-col gap-1.5 ${
+                    isGroundCompliant
+                      ? 'bg-emerald-950/50 border-emerald-500/80 text-emerald-200'
+                      : 'bg-rose-950/50 border-rose-500/80 text-rose-200'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 font-bold text-xs uppercase tracking-wide">
+                      {isGroundCompliant ? (
+                        <>
+                          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                          <span className="text-emerald-300">CUMPLE NORMATIVA SEC RIC N°06</span>
+                        </>
+                      ) : (
+                        <>
+                          <XCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                          <span className="text-rose-300">NO CUMPLE NORMATIVA SEC RIC N°06</span>
+                        </>
+                      )}
+                    </div>
+                    <span
+                      className={`text-[10px] px-2 py-0.5 rounded-full font-extrabold uppercase ${
+                        isGroundCompliant
+                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                          : 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                      }`}
+                    >
+                      {isGroundCompliant ? 'CONFORME (≤ 20 Ω)' : 'NO CONFORME (> 20 Ω)'}
+                    </span>
+                  </div>
+
+                  <p className="text-[11px] leading-snug">
+                    {isGroundCompliant ? (
+                      <>
+                        <strong className="text-white">Resistencia Medida: {groundResistance} Ω.</strong> Margen de seguridad:{' '}
+                        <span className="font-mono text-emerald-300 font-bold">{(20 - groundResistance).toFixed(1)} Ω</span> por
+                        debajo del máximo de 20.0 Ω. Garantiza el correcto drenaje de corrientes de falla a tierra.
+                      </>
+                    ) : (
+                      <>
+                        <strong className="text-white">Resistencia Medida: {groundResistance} Ω.</strong> Excede el límite normativo por{' '}
+                        <span className="font-mono text-rose-300 font-bold">{(groundResistance - 20).toFixed(1)} Ω</span>. Se
+                        requiere instalar barras adicionales o mejorador de suelo (RIC N°06).
+                      </>
+                    )}
+                  </p>
+                </div>
+              </div>
             </div>
 
-            <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
-              <span className="text-[10px] text-slate-400 font-bold block">Tiempo Disparo RCD (RIC N°05)</span>
-              <span className="text-sm font-extrabold text-emerald-400">22 ms (30mA)</span>
+            {/* Other Secondary Normative Readings */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-800/80 text-xs">
+              <div className="bg-slate-900 p-2.5 rounded-xl border border-slate-800 flex items-center justify-between">
+                <span className="text-slate-400 font-semibold text-[11px]">Aislamiento Conductores (RIC N°04):</span>
+                <span className="font-mono font-bold text-emerald-400">&gt; 50 MΩ (500V DC)</span>
+              </div>
+              <div className="bg-slate-900 p-2.5 rounded-xl border border-slate-800 flex items-center justify-between">
+                <span className="text-slate-400 font-semibold text-[11px]">Tiempo Disparo RCD (RIC N°05):</span>
+                <span className="font-mono font-bold text-emerald-400">22 ms (a 30mA)</span>
+              </div>
             </div>
           </div>
         </div>

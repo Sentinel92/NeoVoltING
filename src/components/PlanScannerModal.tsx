@@ -283,7 +283,7 @@ export const PlanScannerModal: React.FC<PlanScannerModalProps> = ({
                           {r.lightPoints} Luces • {r.socketPoints} Enchufes
                         </div>
                       </div>
-                      <span className="text-[10px] text-emerald-400 font-mono font-bold">{r.surfaceM2} m²</span>
+                      {(r as any).surfaceM2 && <span className="text-[10px] text-emerald-400 font-mono font-bold">{(r as any).surfaceM2} m²</span>}
                     </div>
                   ))}
                 </div>

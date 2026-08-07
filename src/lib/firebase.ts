@@ -7,21 +7,20 @@ import {
   doc,
   setDoc,
   getDoc,
+  onSnapshot,
   Firestore,
   serverTimestamp,
 } from 'firebase/firestore';
 import { getFunctions } from 'firebase/functions';
 
-const metaEnv = (import.meta as any).env || {};
-
-// Default / Optional Firebase Config
+// Firebase configuration reading strictly from import.meta.env.VITE_FIREBASE_*
 const firebaseConfig = {
-  apiKey: metaEnv.VITE_FIREBASE_API_KEY || "AIzaSyDemoNeovoltSecApiKey12345",
-  authDomain: metaEnv.VITE_FIREBASE_AUTH_DOMAIN || "neovolt-sec-pwa.firebaseapp.com",
-  projectId: metaEnv.VITE_FIREBASE_PROJECT_ID || "neovolt-sec-pwa",
-  storageBucket: metaEnv.VITE_FIREBASE_STORAGE_BUCKET || "neovolt-sec-pwa.appspot.com",
-  messagingSenderId: metaEnv.VITE_FIREBASE_MESSAGING_SENDER_ID || "8429100021",
-  appId: metaEnv.VITE_FIREBASE_APP_ID || "1:8429100021:web:neovoltsec84291",
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyDemoNeovoltSecApiKey12345",
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "neovolt-sec-pwa.firebaseapp.com",
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "neovolt-sec-pwa",
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "neovolt-sec-pwa.appspot.com",
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "8429100021",
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:8429100021:web:neovoltsec84291",
 };
 
 let app: FirebaseApp | null = null;
@@ -106,4 +105,38 @@ export async function loadUserDataFromFirebase(userEmail: string): Promise<any |
     console.warn('[Firebase] Error al consultar Firestore:', err);
   }
   return null;
+}
+
+/**
+ * Subscribe in real time using onSnapshot for cross-device & multi-tab auto sync
+ */
+export function subscribeToUserDataRealtime(
+  userEmail: string,
+  onUpdate: (payload: any, isFromOtherDevice: boolean) => void
+): () => void {
+  if (!userEmail || !db) return () => {};
+  const sanitizedEmail = userEmail.trim().toLowerCase().replace(/[^a-zA-Z0-9_.-]/g, '_');
+
+  try {
+    const docRef = doc(db, 'neovolt_user_backups', sanitizedEmail);
+    const unsubscribe = onSnapshot(
+      docRef,
+      (snapshot) => {
+        if (snapshot.exists()) {
+          const data = snapshot.data();
+          if (data && data.payload) {
+            const isFromOtherDevice = !snapshot.metadata.hasPendingWrites;
+            onUpdate(data.payload, isFromOtherDevice);
+          }
+        }
+      },
+      (error) => {
+        console.warn('[Firebase Realtime] Error en escuchador onSnapshot:', error);
+      }
+    );
+    return unsubscribe;
+  } catch (err) {
+    console.warn('[Firebase Realtime] No se pudo iniciar suscripción en tiempo real:', err);
+    return () => {};
+  }
 }

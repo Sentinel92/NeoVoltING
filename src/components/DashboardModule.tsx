@@ -1,5 +1,6 @@
-import React, { useState, useMemo } from 'react';
-import { ElectricalProject, ClientRecord } from '../types';
+import React, { useState, useMemo, useEffect } from 'react';
+import { ElectricalProject, ClientRecord, BudgetHistoryRecord, RoomData, HighAppliance } from '../types';
+import { QuickStartGuideModal } from './QuickStartGuideModal';
 import {
   ResponsiveContainer,
   BarChart,
@@ -31,13 +32,22 @@ import {
   ShieldAlert,
   Zap,
   Users,
+  HelpCircle,
+  Sparkles,
+  RotateCcw,
+  History,
 } from 'lucide-react';
 
 interface DashboardModuleProps {
   projects: ElectricalProject[];
   clients?: ClientRecord[];
+  budgetHistory?: BudgetHistoryRecord[];
+  onRevertBudgetHistory?: (record: BudgetHistoryRecord) => void;
   onNavigateToTab?: (tab: string) => void;
   onSelectProjectForQuote?: (project: ElectricalProject) => void;
+  rooms?: RoomData[];
+  highAppliances?: HighAppliance[];
+  contractedCapacityKW?: number;
 }
 
 // Status definitions & theme colors
@@ -121,13 +131,27 @@ const parseProjectDate = (dateStr?: string): Date | null => {
 export const DashboardModule: React.FC<DashboardModuleProps> = ({
   projects,
   clients = [],
+  budgetHistory,
+  onRevertBudgetHistory,
   onNavigateToTab,
   onSelectProjectForQuote,
+  rooms = [],
+  highAppliances = [],
+  contractedCapacityKW = 5.5,
 }) => {
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<string>('ALL');
   const [selectedYearFilter, setSelectedYearFilter] = useState<string>('ALL');
   const [timeFrameFilter, setTimeFrameFilter] = useState<'ALL' | 'THIS_MONTH' | 'LAST_3_MONTHS' | 'THIS_YEAR'>('ALL');
   const [selectedProjectTypeFilter, setSelectedProjectTypeFilter] = useState<string>('ALL');
+  const [showQuickGuide, setShowQuickGuide] = useState<boolean>(false);
+
+  // Auto-open quick start guide on first visit
+  useEffect(() => {
+    const hasSeenGuide = localStorage.getItem('neovolt_quickstart_seen');
+    if (hasSeenGuide !== 'true') {
+      setShowQuickGuide(true);
+    }
+  }, []);
 
   // Extract available years from projects
   const availableYears = useMemo(() => {
@@ -399,6 +423,102 @@ export const DashboardModule: React.FC<DashboardModuleProps> = ({
     return { totalPresupuesto, totalLabor, totalMaterials, avgMargin };
   }, [monthlyProfitabilityData]);
 
+  // Chart Data: Load Census (Rooms & High Appliances) vs Contracted Capacity
+  const loadCensusData = useMemo(() => {
+    const activeRooms = rooms.length > 0 ? rooms : [
+      { id: 'r1', name: 'Cocina & Logia', lightPoints: 2, socketPoints: 4, devices: [{ name: 'Hervidor', powerWatts: 1800, quantity: 1, hoursPerDay: 0.5 }, { name: 'Microondas', powerWatts: 1200, quantity: 1, hoursPerDay: 0.5 }] },
+      { id: 'r2', name: 'Living / Comedor', lightPoints: 4, socketPoints: 6, devices: [{ name: 'TV LED 55"', powerWatts: 150, quantity: 1, hoursPerDay: 5 }, { name: 'Equipo Música', powerWatts: 200, quantity: 1, hoursPerDay: 2 }] },
+      { id: 'r3', name: 'Dormitorio Principal', lightPoints: 2, socketPoints: 4, devices: [{ name: 'Aire Acondicionado Inverter', powerWatts: 1200, quantity: 1, hoursPerDay: 6 }] },
+      { id: 'r4', name: 'Baño Principal', lightPoints: 2, socketPoints: 2, devices: [{ name: 'Secador Pelo', powerWatts: 1600, quantity: 1, hoursPerDay: 0.2 }] },
+    ];
+
+    const activeHigh = highAppliances.length > 0 ? highAppliances : [
+      { id: 'ha1', name: 'Horno Eléctrico Empotrable', powerWatts: 2800, quantity: 1, hoursPerDay: 1 },
+      { id: 'ha2', name: 'Termoeléctrico 100L', powerWatts: 2000, quantity: 1, hoursPerDay: 3 },
+    ];
+
+    const chartItems: Array<{
+      category: string;
+      consumoProyectadoKW: number;
+      capacidadContratadaKW: number;
+      consumoDiarioKWh: number;
+    }> = [];
+
+    let totalProjectedWatts = 0;
+
+    activeRooms.forEach((r) => {
+      const lightsPower = (r.lightPoints || 0) * 100;
+      const socketsPower = (r.socketPoints || 0) * 150;
+      const devPower = (r.devices || []).reduce((acc, d) => acc + (d.powerWatts || 0) * (d.quantity || 1), 0);
+      const roomWatts = lightsPower + socketsPower + devPower;
+      totalProjectedWatts += roomWatts;
+
+      const roomKW = Math.round((roomWatts / 1000) * 100) / 100;
+      const devKWhDay = (r.devices || []).reduce((acc, d) => acc + ((d.powerWatts || 0) * (d.quantity || 1) * (d.hoursPerDay || 1)) / 1000, 0);
+
+      chartItems.push({
+        category: r.name,
+        consumoProyectadoKW: roomKW,
+        capacidadContratadaKW: contractedCapacityKW,
+        consumoDiarioKWh: Math.round(devKWhDay * 10) / 10,
+      });
+    });
+
+    if (activeHigh.length > 0) {
+      const highWatts = activeHigh.reduce((acc, h: any) => acc + (h.powerWatts || 0) * (h.quantity || 1), 0);
+      totalProjectedWatts += highWatts;
+      const highKW = Math.round((highWatts / 1000) * 100) / 100;
+      const highKWhDay = activeHigh.reduce((acc, h: any) => acc + ((h.powerWatts || 0) * (h.quantity || 1) * (h.hoursPerDay || 2)) / 1000, 0);
+
+      chartItems.push({
+        category: 'Cargas Gran Potencia',
+        consumoProyectadoKW: highKW,
+        capacidadContratadaKW: contractedCapacityKW,
+        consumoDiarioKWh: Math.round(highKWhDay * 10) / 10,
+      });
+    }
+
+    const totalProjectedKW = Math.round((totalProjectedWatts / 1000) * 100) / 100;
+    const capacityUsagePercent = Math.round((totalProjectedKW / contractedCapacityKW) * 100);
+
+    return {
+      chartItems,
+      totalProjectedKW,
+      contractedCapacityKW,
+      capacityUsagePercent,
+      isOverCapacity: totalProjectedKW > contractedCapacityKW,
+    };
+  }, [rooms, highAppliances, contractedCapacityKW]);
+
+  // Custom Tooltip for Load Census Comparative Chart
+  const CustomLoadCensusTooltip = ({ active, payload, label }: any) => {
+    if (active && payload && payload.length) {
+      const data = payload[0].payload;
+      return (
+        <div className="bg-slate-900 border border-slate-700 p-3 rounded-xl shadow-2xl text-xs space-y-1.5">
+          <p className="font-bold text-sky-400 text-sm border-b border-slate-800 pb-1">
+            Zona / Carga: {label}
+          </p>
+          <div className="text-white space-y-1">
+            <p className="flex justify-between gap-4">
+              <span className="text-slate-400">Potencia Proyectada:</span>
+              <strong className="text-sky-300 font-mono">{data.consumoProyectadoKW} kW</strong>
+            </p>
+            <p className="flex justify-between gap-4">
+              <span className="text-slate-400">Capacidad Contratada Empalme:</span>
+              <strong className="text-amber-400 font-mono">{data.capacidadContratadaKW} kW</strong>
+            </p>
+            <p className="flex justify-between gap-4 border-t border-slate-800 pt-1 text-[11px]">
+              <span className="text-slate-400">Consumo Estimado Diario:</span>
+              <strong className="text-emerald-300 font-mono">{data.consumoDiarioKWh} kWh/día</strong>
+            </p>
+          </div>
+        </div>
+      );
+    }
+    return null;
+  };
+
   // Custom Tooltip for Monthly Profitability Chart
   const CustomProfitabilityTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
@@ -483,6 +603,13 @@ export const DashboardModule: React.FC<DashboardModuleProps> = ({
 
   return (
     <div className="space-y-6">
+      {/* Quick Start Guide Modal */}
+      <QuickStartGuideModal
+        isOpen={showQuickGuide}
+        onClose={() => setShowQuickGuide(false)}
+        onNavigateToTab={onNavigateToTab}
+      />
+
       {/* Top KPI Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <motion.div
@@ -556,9 +683,19 @@ export const DashboardModule: React.FC<DashboardModuleProps> = ({
             <BarChart3 className="w-4 h-4" />
             <span>Métricas & Indicadores Financieros SEC</span>
           </div>
-          <h2 className="text-2xl font-black text-white tracking-tight">
-            Dashboard de Proyectos & Presupuestos
-          </h2>
+          <div className="flex items-center gap-3">
+            <h2 className="text-2xl font-black text-white tracking-tight">
+              Dashboard de Proyectos & Presupuestos
+            </h2>
+            <button
+              onClick={() => setShowQuickGuide(true)}
+              className="flex items-center gap-1.5 bg-fuchsia-600/20 hover:bg-fuchsia-600/30 text-fuchsia-300 border border-fuchsia-500/40 text-xs font-bold px-3 py-1.5 rounded-xl transition-all shadow-sm active:scale-95"
+              title="Ver Guía de Inicio Rápido"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-fuchsia-400" />
+              <span>Guía de Inicio</span>
+            </button>
+          </div>
           <p className="text-slate-400 text-xs sm:text-sm mt-1">
             Visualiza el rendimiento operativo, distribución de estados y el flujo de caja mensual de tus obras eléctricas.
           </p>
@@ -952,6 +1089,115 @@ export const DashboardModule: React.FC<DashboardModuleProps> = ({
         </div>
       </div>
 
+      {/* NUEVO GRÁFICO: Comparativa Censo de Cargas (Consumo Proyectado) vs Capacidad Contratada Empalme */}
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 sm:p-6 shadow-xl space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
+          <div>
+            <div className="flex items-center gap-2 text-sky-400 text-xs font-bold tracking-wider uppercase mb-1">
+              <BarChart3 className="w-4 h-4 text-sky-400" />
+              <span>Balance de Potencia Instalada (Censo de Cargas)</span>
+            </div>
+            <h3 className="text-lg font-extrabold text-white flex items-center gap-2">
+              <span>Consumo Proyectado por Zona vs. Capacidad Contratada Actual</span>
+              {loadCensusData.isOverCapacity ? (
+                <span className="bg-rose-500/20 text-rose-300 border border-rose-500/40 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                  <ShieldAlert className="w-3 h-3 text-rose-400" />
+                  Sobrecarga (+{loadCensusData.capacityUsagePercent}%)
+                </span>
+              ) : (
+                <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                  Capacidad Óptima ({loadCensusData.capacityUsagePercent}%)
+                </span>
+              )}
+            </h3>
+            <p className="text-slate-400 text-xs mt-0.5">
+              Comparativa por zona y artefactos de alta potencia frente al límite del empalme ({loadCensusData.contractedCapacityKW} kW).
+            </p>
+          </div>
+
+          <div className="flex items-center gap-3 text-xs bg-slate-950 p-2.5 rounded-xl border border-slate-800 self-start sm:self-auto">
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded bg-sky-400" />
+              <span className="text-slate-200 font-medium">Potencia Proyectada (kW)</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded bg-amber-400" />
+              <span className="text-slate-200 font-medium">Capacidad Contratada ({loadCensusData.contractedCapacityKW} kW)</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Load Census Bar Chart */}
+        <div className="h-72 w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart
+              data={loadCensusData.chartItems}
+              margin={{ top: 15, right: 15, left: 15, bottom: 25 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
+              <XAxis
+                dataKey="category"
+                stroke="#64748b"
+                fontSize={11}
+                tickLine={false}
+                axisLine={{ stroke: '#334155' }}
+              />
+              <YAxis
+                stroke="#64748b"
+                fontSize={10}
+                tickLine={false}
+                axisLine={{ stroke: '#334155' }}
+                unit=" kW"
+              />
+              <Tooltip content={<CustomLoadCensusTooltip />} />
+              <Legend
+                verticalAlign="top"
+                height={36}
+                formatter={(value) => (
+                  <span className="text-xs text-slate-300 font-medium">{value}</span>
+                )}
+              />
+              <Bar
+                dataKey="consumoProyectadoKW"
+                name="Consumo Proyectado (kW)"
+                fill="#38bdf8"
+                radius={[6, 6, 0, 0]}
+                maxBarSize={32}
+              />
+              <Bar
+                dataKey="capacidadContratadaKW"
+                name="Capacidad Contratada Empalme (kW)"
+                fill="#f59e0b"
+                radius={[6, 6, 0, 0]}
+                maxBarSize={32}
+              />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* Summary Footer Bar */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-800 text-xs">
+          <div className="bg-slate-950 p-3 rounded-xl border border-slate-800/80 flex items-center justify-between">
+            <span className="text-slate-400">Demanda Total Proyectada:</span>
+            <span className="font-mono font-bold text-sky-300">
+              {loadCensusData.totalProjectedKW} kW
+            </span>
+          </div>
+          <div className="bg-slate-950 p-3 rounded-xl border border-slate-800/80 flex items-center justify-between">
+            <span className="text-slate-400">Capacidad Empalme Contratada:</span>
+            <span className="font-mono font-bold text-amber-400">
+              {loadCensusData.contractedCapacityKW} kW
+            </span>
+          </div>
+          <div className="bg-slate-950 p-3 rounded-xl border border-slate-800/80 flex items-center justify-between">
+            <span className="text-slate-400">Factor de Carga del Empalme:</span>
+            <span className={`font-mono font-bold ${loadCensusData.isOverCapacity ? 'text-rose-400 font-black' : 'text-emerald-400'}`}>
+              {loadCensusData.capacityUsagePercent}% {loadCensusData.isOverCapacity ? '(Aumento requerido)' : '(Normal)'}
+            </span>
+          </div>
+        </div>
+      </div>
+
       {/* Secondary Chart & Distribution by Service Type */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Presupuesto por Tipo de Proyecto */}
@@ -1074,6 +1320,148 @@ export const DashboardModule: React.FC<DashboardModuleProps> = ({
             <span className="text-slate-500">Valores sin IVA si aplica</span>
           </div>
         </div>
+      </div>
+
+      {/* SECCIÓN HISTORIAL DE CAMBIOS DEL PRESUPUESTO DE PROYECTO */}
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 sm:p-6 shadow-xl space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
+          <div>
+            <div className="flex items-center gap-2 text-fuchsia-400 text-xs font-bold tracking-wider uppercase mb-1">
+              <History className="w-4 h-4 text-amber-400" />
+              <span>Auditoría & Trazabilidad de Cotizaciones</span>
+            </div>
+            <h3 className="text-lg font-extrabold text-white flex items-center gap-2">
+              Historial de Cambios del Presupuesto (Últimas 5 Modificaciones)
+            </h3>
+            <p className="text-slate-400 text-xs mt-0.5">
+              Registro histórico de modificaciones de insumos, mano de obra o partidas. Puedes revertir cualquier versión previa.
+            </p>
+          </div>
+
+          <div className="bg-slate-950 px-3 py-1.5 rounded-xl border border-slate-800 text-xs font-mono text-slate-300 flex items-center gap-2">
+            <Clock className="w-3.5 h-3.5 text-amber-400" />
+            <span>{(budgetHistory || []).length > 0 ? (budgetHistory || []).length : 3} Registros Guardados</span>
+          </div>
+        </div>
+
+        {(!budgetHistory || budgetHistory.length === 0) ? (
+          <div className="space-y-3">
+            {[
+              {
+                id: 'h_demo_1',
+                projectId: 'p1',
+                timestamp: '07/08/2026 14:15',
+                description: 'Ajuste de Mano de Obra Ejecución Especializada SEC',
+                previousTotal: 140000,
+                newTotal: 158330,
+                previousItems: [],
+                previousLaborCost: 65000,
+              },
+              {
+                id: 'h_demo_2',
+                projectId: 'p1',
+                timestamp: '07/08/2026 11:30',
+                description: 'Añadido Disyuntor Monofásico Bticino 1x16A Curva C',
+                previousTotal: 132350,
+                newTotal: 140000,
+                previousItems: [],
+                previousLaborCost: 55000,
+              },
+              {
+                id: 'h_demo_3',
+                projectId: 'p1',
+                timestamp: '06/08/2026 18:45',
+                description: 'Inclusión de Protector de Sobretensión DPS 275V',
+                previousTotal: 107360,
+                newTotal: 132350,
+                previousItems: [],
+                previousLaborCost: 55000,
+              },
+            ].map((record, index) => {
+              const delta = record.newTotal - record.previousTotal;
+              const isIncrease = delta > 0;
+              return (
+                <div
+                  key={record.id}
+                  className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 hover:border-slate-700 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                >
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2 py-0.5 rounded-full">
+                        v{3 - index}
+                      </span>
+                      <span className="text-xs font-bold text-white">{record.description}</span>
+                      <span className="text-[10px] text-slate-500 font-mono">({record.timestamp})</span>
+                    </div>
+
+                    <div className="flex items-center gap-3 text-xs text-slate-400">
+                      <span>Anterior: <strong className="text-slate-300">{formatCLP(record.previousTotal)}</strong></span>
+                      <span>→</span>
+                      <span>Nuevo: <strong className="text-emerald-400">{formatCLP(record.newTotal)}</strong></span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0">
+                    <div className={`text-xs font-mono font-bold px-2.5 py-1 rounded-lg ${isIncrease ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'}`}>
+                      {isIncrease ? `+${formatCLP(delta)}` : formatCLP(delta)}
+                    </div>
+
+                    <button
+                      onClick={() => onRevertBudgetHistory && onRevertBudgetHistory(record)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-fuchsia-600/30 text-fuchsia-300 hover:text-white border border-slate-700 hover:border-fuchsia-500/50 text-xs font-semibold transition-all shadow-sm"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>Revertir Cambio</span>
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {budgetHistory.slice(0, 5).map((record, index) => {
+              const delta = record.newTotal - record.previousTotal;
+              const isIncrease = delta > 0;
+              return (
+                <div
+                  key={record.id || index}
+                  className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 hover:border-slate-700 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                >
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2 py-0.5 rounded-full">
+                        v{budgetHistory.length - index}
+                      </span>
+                      <span className="text-xs font-bold text-white">{record.description}</span>
+                      <span className="text-[10px] text-slate-500 font-mono">({record.timestamp})</span>
+                    </div>
+
+                    <div className="flex items-center gap-3 text-xs text-slate-400">
+                      <span>Anterior: <strong className="text-slate-300">{formatCLP(record.previousTotal)}</strong></span>
+                      <span>→</span>
+                      <span>Nuevo: <strong className="text-emerald-400">{formatCLP(record.newTotal)}</strong></span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0">
+                    <div className={`text-xs font-mono font-bold px-2.5 py-1 rounded-lg ${isIncrease ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : delta < 0 ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20' : 'bg-slate-800 text-slate-300'}`}>
+                      {isIncrease ? `+${formatCLP(delta)}` : delta < 0 ? formatCLP(delta) : 'Sin Cambio'}
+                    </div>
+
+                    <button
+                      onClick={() => onRevertBudgetHistory && onRevertBudgetHistory(record)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-fuchsia-600/30 text-fuchsia-300 hover:text-white border border-slate-700 hover:border-fuchsia-500/50 text-xs font-semibold transition-all shadow-sm"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>Revertir Cambio</span>
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );

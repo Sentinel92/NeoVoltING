@@ -1,6 +1,7 @@
 // src/utils/pdfGenerator.ts
 import html2canvasPro from 'html2canvas-pro';
 import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 // @ts-ignore
 import html2pdf from 'html2pdf.js';
 
@@ -429,4 +430,214 @@ export async function generatePdfBlob(
       container.parentNode.removeChild(container);
     }
   }
+}
+
+/**
+ * Direct jsPDF vector generator with professional letterhead and autoTable
+ */
+export function exportQuoteJsPdf(data: {
+  items: Array<{ id: string; name: string; quantity: number; price: number; category: string; unit?: string; skuCode?: string }>;
+  customer: { name: string; rut?: string; address?: string; city?: string; phone?: string; email?: string };
+  contractor: {
+    companyName: string;
+    rut?: string;
+    installerName: string;
+    secLicense?: string;
+    secClass?: string;
+    phone?: string;
+    email?: string;
+    bankDetails?: { bankName: string; accountType: string; accountNumber: string; holderName: string; holderRut: string; emailForNotify: string };
+  };
+  laborCost: number;
+  includeContingency15: boolean;
+  clauses?: Array<{ id: string; title: string; content: string }>;
+  signatureDataUrl?: string;
+}) {
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+  // 1. Membrete Encabezado Profesional
+  doc.setFillColor(15, 23, 42); // slate-900
+  doc.rect(0, 0, 210, 28, 'F');
+
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(15);
+  doc.text(data.contractor.companyName || 'NEOVOLT SEC - PROYECTOS ELÉCTRICOS', 14, 12);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.text(`RUT: ${data.contractor.rut || '77.892.100-K'} | Instalador SEC: ${data.contractor.installerName} (${data.contractor.secLicense || 'Lic. SEC 182940'})`, 14, 18);
+  doc.text(`Email: ${data.contractor.email || 'contacto@neovolt.cl'} | Fono: ${data.contractor.phone || '+56 9 8765 4321'}`, 14, 23);
+
+  // Fecha y Folio Cotización
+  const today = new Date().toLocaleDateString('es-CL');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.text('COTIZACIÓN OFICIAL', 145, 12);
+  doc.setFontSize(8.5);
+  doc.setFont('helvetica', 'normal');
+  doc.text(`Fecha: ${today}`, 145, 18);
+  doc.text(`Válido por 30 días corridos`, 145, 23);
+
+  // 2. Datos del Cliente & Obra
+  doc.setTextColor(15, 23, 42);
+  doc.setFillColor(241, 245, 249); // slate-100
+  doc.rect(14, 34, 182, 20, 'F');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9.5);
+  doc.text('DATOS DEL CLIENTE Y UBICACIÓN DE OBRA:', 18, 40);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.text(`Cliente: ${data.customer.name || 'Sin Especificar'} (RUT: ${data.customer.rut || 'N/A'})`, 18, 46);
+  doc.text(`Dirección: ${data.customer.address || 'Chile'} - ${data.customer.city || ''}`, 18, 50);
+  doc.text(`Contacto: ${data.customer.phone || 'N/A'} | Email: ${data.customer.email || 'N/A'}`, 110, 46);
+
+  // 3. Tabla de Materiales e Insumos (autoTable)
+  const tableData = data.items.map((item, idx) => [
+    (idx + 1).toString(),
+    item.name,
+    item.category || 'MATERIAL',
+    item.quantity.toString(),
+    `$${item.price.toLocaleString('es-CL')}`,
+    `$${(item.quantity * item.price).toLocaleString('es-CL')}`,
+  ]);
+
+  const rawMaterialsTotal = data.items.reduce((s, i) => s + i.quantity * i.price, 0);
+
+  autoTable(doc, {
+    startY: 58,
+    head: [['#', 'Descripción de Materiales e Insumos', 'Categoría', 'Cant.', 'Unit. CLP', 'Subtotal CLP']],
+    body: tableData,
+    theme: 'striped',
+    headStyles: {
+      fillColor: [15, 23, 42],
+      textColor: [255, 255, 255],
+      fontStyle: 'bold',
+      fontSize: 8.5,
+    },
+    styles: {
+      fontSize: 8,
+      cellPadding: 2,
+    },
+    columnStyles: {
+      0: { cellWidth: 10, halign: 'center' },
+      1: { cellWidth: 80 },
+      2: { cellWidth: 32 },
+      3: { cellWidth: 15, halign: 'center' },
+      4: { cellWidth: 22, halign: 'right' },
+      5: { cellWidth: 23, halign: 'right' },
+    },
+  });
+
+  // Get final Y after autoTable
+  let finalY = (doc as any).lastAutoTable ? (doc as any).lastAutoTable.finalY + 6 : 100;
+
+  if (finalY > 230) {
+    doc.addPage();
+    finalY = 20;
+  }
+
+  // 4. Resumen Financiero de Costos
+  const baseSubtotal = rawMaterialsTotal + data.laborCost;
+  const contingencyVal = data.includeContingency15 ? baseSubtotal * 0.15 : 0;
+  const totalFinalCLP = baseSubtotal + contingencyVal;
+
+  doc.setFillColor(248, 250, 252);
+  doc.setDrawColor(226, 232, 240);
+  doc.rect(110, finalY, 86, 36, 'FD');
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.setTextColor(51, 65, 85);
+
+  doc.text(`Total Materiales:`, 114, finalY + 6);
+  doc.text(`$${rawMaterialsTotal.toLocaleString('es-CL')} CLP`, 190, finalY + 6, { align: 'right' });
+
+  doc.text(`Mano de Obra SEC:`, 114, finalY + 12);
+  doc.text(`$${data.laborCost.toLocaleString('es-CL')} CLP`, 190, finalY + 12, { align: 'right' });
+
+  if (data.includeContingency15) {
+    doc.text(`Imprevistos Obra (15%):`, 114, finalY + 18);
+    doc.text(`$${contingencyVal.toLocaleString('es-CL')} CLP`, 190, finalY + 18, { align: 'right' });
+  }
+
+  doc.setLineWidth(0.4);
+  doc.setDrawColor(15, 23, 42);
+  doc.line(114, finalY + 22, 190, finalY + 22);
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10.5);
+  doc.setTextColor(15, 23, 42);
+  doc.text(`TOTAL FINAL:`, 114, finalY + 29);
+  doc.text(`$${totalFinalCLP.toLocaleString('es-CL')} CLP`, 190, finalY + 29, { align: 'right' });
+
+  // Datos Bancarios (Lado izquierdo)
+  if (data.contractor.bankDetails) {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.text('DATOS PARA TRANSFERENCIA BANCARIA:', 14, finalY + 6);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.text(`Banco: ${data.contractor.bankDetails.bankName}`, 14, finalY + 11);
+    doc.text(`Tipo Cuenta: ${data.contractor.bankDetails.accountType} N° ${data.contractor.bankDetails.accountNumber}`, 14, finalY + 16);
+    doc.text(`Titular: ${data.contractor.bankDetails.holderName} (RUT: ${data.contractor.bankDetails.holderRut})`, 14, finalY + 21);
+    doc.text(`Email Comprobante: ${data.contractor.bankDetails.emailForNotify}`, 14, finalY + 26);
+  }
+
+  // 5. Cláusulas del Contrato
+  let clauseY = finalY + 42;
+  if (data.clauses && data.clauses.length > 0) {
+    if (clauseY > 210) {
+      doc.addPage();
+      clauseY = 20;
+    }
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(15, 23, 42);
+    doc.text('CONDICIONES Y CLÁUSULAS CONTRACTUALES RIC SEC:', 14, clauseY);
+    clauseY += 5;
+
+    data.clauses.forEach((c) => {
+      if (clauseY > 265) {
+        doc.addPage();
+        clauseY = 20;
+      }
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.text(c.title, 14, clauseY);
+      clauseY += 4;
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      const splitText = doc.splitTextToSize(c.content, 182);
+      doc.text(splitText, 14, clauseY);
+      clauseY += splitText.length * 3.5 + 2;
+    });
+  }
+
+  // 6. Firma digital si existe
+  if (data.signatureDataUrl) {
+    if (clauseY > 230) {
+      doc.addPage();
+      clauseY = 20;
+    }
+    try {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.text('FIRMA DE ACEPTACIÓN DEL CLIENTE:', 14, clauseY + 4);
+      doc.addImage(data.signatureDataUrl, 'PNG', 14, clauseY + 6, 45, 18);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.text(`Firmado digitalmente por: ${data.customer.name}`, 14, clauseY + 27);
+    } catch (e) {
+      console.warn('No se pudo insertar la firma en PDF:', e);
+    }
+  }
+
+  const clientSlug = (data.customer.name || 'Cliente').replace(/[^a-zA-Z0-9]/g, '_');
+  doc.save(`Cotizacion_Oficial_${clientSlug}.pdf`);
+  return doc;
 }

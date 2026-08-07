@@ -10,7 +10,8 @@ import {
   ClientRecord, 
   CustomProtectionSpecs, 
   ElectricalProject, 
-  ProjectBoardConfig 
+  ProjectBoardConfig,
+  BudgetHistoryRecord
 } from './types';
 
 import { HeaderNavbar } from './components/HeaderNavbar';
@@ -32,7 +33,7 @@ import { DashboardModule } from './components/DashboardModule';
 import { TabSkeletonScreen } from './components/TabSkeletonScreen';
 import { motion, AnimatePresence } from 'motion/react';
 
-import { saveUserDataToFirebase, loadUserDataFromFirebase } from './lib/firebase';
+import { saveUserDataToFirebase, loadUserDataFromFirebase, subscribeToUserDataRealtime } from './lib/firebase';
 import { 
   enqueueOfflineSync, 
   getPendingSyncQueue, 
@@ -378,6 +379,26 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('neovolt_projects', JSON.stringify(projects));
   }, [projects]);
+
+  const [budgetHistory, setBudgetHistory] = useState<BudgetHistoryRecord[]>(() => {
+    try {
+      const local = localStorage.getItem('neovolt_budget_history');
+      return local ? JSON.parse(local) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const handleRevertBudgetHistory = (record: BudgetHistoryRecord) => {
+    if (record.previousItems && record.previousItems.length > 0) {
+      setBudgetItems(record.previousItems);
+    }
+    setSyncToast({
+      message: `✅ Restablecida versión del ${record.timestamp}: ${record.description}`,
+      type: 'success',
+    });
+    setTimeout(() => setSyncToast(null), 5000);
+  };
 
   const [selectedProjectClientId, setSelectedProjectClientId] = useState<string | undefined>(undefined);
 
@@ -795,6 +816,34 @@ export default function App() {
     }
   }, [user.email]);
 
+  // Real-time Firestore onSnapshot Listener for multi-device & multi-tab auto sync
+  useEffect(() => {
+    if (!user.isLoggedIn || !user.email) return;
+
+    const unsubscribe = subscribeToUserDataRealtime(user.email, (fbData, isFromOtherDevice) => {
+      if (isFromOtherDevice && fbData) {
+        if (fbData.clients) setClients(fbData.clients);
+        if (fbData.projects) setProjects(fbData.projects);
+        if (fbData.rooms) setRooms(fbData.rooms);
+        if (fbData.highAppliances) setHighAppliances(fbData.highAppliances);
+        if (fbData.budgetItems) setBudgetItems(fbData.budgetItems);
+        if (fbData.customer) setCustomer(fbData.customer);
+        if (fbData.contractor) setContractor(fbData.contractor);
+        if (fbData.workReport) setWorkReport(fbData.workReport);
+        if (fbData.feederLength) setFeederLength(fbData.feederLength);
+        if (fbData.isThreePhase !== undefined) setIsThreePhase(fbData.isThreePhase);
+        if (fbData.feederWireSection) setFeederWireSection(fbData.feederWireSection);
+        const now = new Date().toISOString();
+        setLastCloudSyncTime(now);
+        localStorage.setItem('neovolt_last_cloud_sync', now);
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [user.isLoggedIn, user.email]);
+
   // Debounced background sync to Firebase when local state changes (optimistic)
   const isFirstSyncRun = useRef(true);
   useEffect(() => {
@@ -995,8 +1044,12 @@ export default function App() {
                 <DashboardModule
                   projects={projects}
                   clients={clients}
+                  budgetHistory={budgetHistory}
+                  onRevertBudgetHistory={handleRevertBudgetHistory}
                   onNavigateToTab={setActiveTab}
                   onSelectProjectForQuote={handleSelectProjectForQuote}
+                  rooms={rooms}
+                  highAppliances={highAppliances}
                 />
               )}
 

@@ -35,6 +35,377 @@ import {
 } from 'lucide-react';
 import { downloadPdfFromElement } from '../utils/pdfGenerator';
 
+interface SingleLineCanvasRendererProps {
+  isThreePhase: boolean;
+  feederLength: number;
+  feederWireSection: number;
+  iga: { amps: number; curve: string; breakingCapacity: string; poles: string };
+  dps: { voltage: string; dischargeCurrent: string };
+  rcds: Record<number, { amps: number; sensitivity: string; classType: string }>;
+  circuits: Array<{
+    code: string;
+    name: string;
+    breaker: string;
+    wire: string;
+    pipe: string;
+    loadW: number;
+    rcdGroup: number;
+    amps: number;
+  }>;
+  vNominal: number;
+  dropVolts: number;
+  dropPercent: number;
+  isDropExceeded: boolean;
+}
+
+export const SingleLineCanvasRenderer: React.FC<SingleLineCanvasRendererProps> = ({
+  isThreePhase,
+  feederLength,
+  feederWireSection,
+  iga,
+  dps,
+  rcds,
+  circuits,
+  vNominal,
+  dropVolts,
+  dropPercent,
+  isDropExceeded,
+}) => {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const numCircuits = Math.max(1, circuits.length);
+    const colWidth = 175;
+    const paddingLeft = 40;
+    const width = Math.max(1050, paddingLeft + numCircuits * colWidth + 60);
+    const height = 600;
+
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = width * dpr;
+    canvas.height = height * dpr;
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
+
+    ctx.scale(dpr, dpr);
+
+    // 1. Draw CAD Dark Canvas Background with subtle grid lines
+    ctx.fillStyle = '#0b132b';
+    ctx.fillRect(0, 0, width, height);
+
+    ctx.strokeStyle = '#1e293b';
+    ctx.lineWidth = 1;
+    for (let x = 0; x < width; x += 35) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, height);
+      ctx.stroke();
+    }
+    for (let y = 0; y < height; y += 35) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(width, y);
+      ctx.stroke();
+    }
+
+    // 2. Title Header
+    ctx.fillStyle = '#38bdf8';
+    ctx.font = 'bold 13px sans-serif';
+    ctx.fillText('DIAGRAMA UNIFILAR AUTOMÁTICO (MOTOR CANVAS 2D CAD - SEC RIC N°02)', 20, 28);
+
+    // 3. Empalme / Red Distribuidora Symbol
+    ctx.fillStyle = '#1e293b';
+    ctx.strokeStyle = '#6366f1';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(20, 48, 120, 45, 8);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = '#818cf8';
+    ctx.font = 'bold 9px sans-serif';
+    ctx.fillText('RED DISTRIBUIDORA', 28, 64);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 11px sans-serif';
+    ctx.fillText(isThreePhase ? '380V 3Ф (Trifásico)' : '220V 1Ф (Monofásico)', 28, 80);
+
+    // Wire from Empalme to kWh Meter
+    ctx.strokeStyle = '#6366f1';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(140, 70.5);
+    ctx.lineTo(185, 70.5);
+    ctx.stroke();
+
+    // 4. Medidor kWh Circle
+    ctx.fillStyle = '#0f172a';
+    ctx.strokeStyle = '#10b981';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(210, 70.5, 24, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = '#34d399';
+    ctx.font = 'bold 9px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('kWh', 210, 68);
+    ctx.fillText('MEDIDOR', 210, 79);
+    ctx.textAlign = 'left';
+
+    // 5. Alimentador Principal Line
+    const feederColor = isDropExceeded ? '#f43f5e' : '#10b981';
+    ctx.strokeStyle = feederColor;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(234, 70.5);
+    ctx.lineTo(430, 70.5);
+    ctx.stroke();
+
+    // Alimentador Label Box
+    ctx.fillStyle = isDropExceeded ? 'rgba(244, 63, 94, 0.25)' : 'rgba(16, 185, 129, 0.15)';
+    ctx.strokeStyle = feederColor;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.roundRect(248, 38, 172, 26, 6);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = isDropExceeded ? '#fca5a5' : '#a7f3d0';
+    ctx.font = 'bold 9px sans-serif';
+    ctx.fillText(`Alimentador ${feederWireSection}mm² EVA (${feederLength}m)`, 254, 50);
+    ctx.fillText(`Caída V: ${dropPercent.toFixed(2)}% (${dropVolts.toFixed(2)}V)`, 254, 60);
+
+    // 6. IGA (Interruptor General)
+    ctx.fillStyle = '#1e293b';
+    ctx.strokeStyle = '#c084fc';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.roundRect(430, 44, 130, 52, 10);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = '#e879f9';
+    ctx.font = 'bold 9px sans-serif';
+    ctx.fillText('IGA GENERAL', 440, 60);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 12px monospace';
+    ctx.fillText(`${iga.poles}${iga.amps}A ${iga.curve}`, 440, 76);
+    ctx.fillStyle = '#d8b4fe';
+    ctx.font = '9px sans-serif';
+    ctx.fillText(`P.C. ${iga.breakingCapacity}`, 440, 88);
+
+    // Wire from IGA to DPS
+    ctx.strokeStyle = '#c084fc';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(560, 70.5);
+    ctx.lineTo(610, 70.5);
+    ctx.stroke();
+
+    // 7. DPS (Protector Sobretensiones)
+    ctx.fillStyle = '#1e293b';
+    ctx.strokeStyle = '#f59e0b';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.roundRect(610, 44, 120, 52, 10);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = '#fbbf24';
+    ctx.font = 'bold 9px sans-serif';
+    ctx.fillText('DPS SOBRETENSIÓN', 620, 60);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 11px monospace';
+    ctx.fillText(`${dps.voltage} - ${dps.dischargeCurrent}`, 620, 76);
+
+    // Ground connection line from DPS down
+    ctx.strokeStyle = '#eab308';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(670, 96);
+    ctx.lineTo(670, 125);
+    ctx.stroke();
+    // Ground symbol
+    ctx.beginPath();
+    ctx.moveTo(660, 125);
+    ctx.lineTo(680, 125);
+    ctx.moveTo(663, 129);
+    ctx.lineTo(677, 129);
+    ctx.moveTo(667, 133);
+    ctx.lineTo(673, 133);
+    ctx.stroke();
+
+    // Wire down to Main Busbar
+    ctx.strokeStyle = '#38bdf8';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(730, 70.5);
+    ctx.lineTo(770, 70.5);
+    ctx.lineTo(770, 145);
+    ctx.lineTo(40, 145);
+    ctx.stroke();
+
+    // 8. Main Distribution Busbars
+    const busY = 145;
+    ctx.fillStyle = '#38bdf8';
+    ctx.fillRect(30, busY - 3, width - 60, 6); // Phase L1 Busbar
+
+    ctx.fillStyle = '#0284c7';
+    ctx.font = 'bold 10px monospace';
+    ctx.fillText('BARRA DISTRIBUIDORA PRINCIPAL TABLERO TDA (FASE + NEUTRO + PE)', 40, busY - 7);
+
+    // 9. Draw Circuits & RCDs
+    circuits.forEach((cto, idx) => {
+      const x = 50 + idx * colWidth;
+      const startY = busY + 3;
+
+      // Vertical feeder drop line from busbar
+      ctx.strokeStyle = '#38bdf8';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(x + 50, startY);
+      ctx.lineTo(x + 50, startY + 35);
+      ctx.stroke();
+
+      // RCD Differential Box (Grouped)
+      const rcdSpec = rcds[cto.rcdGroup] || { amps: 25, sensitivity: '30mA', classType: 'Clase AC' };
+      ctx.fillStyle = '#0f172a';
+      ctx.strokeStyle = '#a855f7';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.roundRect(x, startY + 35, 120, 48, 8);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = '#c084fc';
+      ctx.font = 'bold 9px sans-serif';
+      ctx.fillText(`RCD G${cto.rcdGroup} (Diferencial)`, x + 8, startY + 50);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 10px monospace';
+      ctx.fillText(`2x${rcdSpec.amps}A ${rcdSpec.sensitivity}`, x + 8, startY + 64);
+      ctx.fillStyle = '#e9d5ff';
+      ctx.font = '8px sans-serif';
+      ctx.fillText(rcdSpec.classType, x + 8, startY + 76);
+
+      // Line from RCD to MCB
+      ctx.strokeStyle = '#a855f7';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(x + 50, startY + 83);
+      ctx.lineTo(x + 50, startY + 110);
+      ctx.stroke();
+
+      // MCB Circuit Breaker Box
+      ctx.fillStyle = '#1e293b';
+      ctx.strokeStyle = '#38bdf8';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.roundRect(x, startY + 110, 130, 85, 10);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = '#f59e0b';
+      ctx.font = 'bold 12px monospace';
+      ctx.fillText(cto.code, x + 10, startY + 128);
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 10px sans-serif';
+      ctx.fillText(cto.name.length > 15 ? cto.name.substring(0, 14) + '...' : cto.name, x + 35, startY + 128);
+
+      ctx.fillStyle = '#38bdf8';
+      ctx.font = 'bold 10px monospace';
+      ctx.fillText(cto.breaker, x + 10, startY + 145);
+
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '9px monospace';
+      ctx.fillText(`Cond: ${cto.wire}`, x + 10, startY + 160);
+      ctx.fillText(`Canal: ${cto.pipe}`, x + 10, startY + 173);
+
+      ctx.fillStyle = '#34d399';
+      ctx.font = 'bold 10px monospace';
+      ctx.fillText(`P_decl: ${cto.loadW} W`, x + 10, startY + 186);
+
+      // Outgoing Load Connection Line
+      ctx.strokeStyle = '#34d399';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(x + 50, startY + 195);
+      ctx.lineTo(x + 50, startY + 240);
+      ctx.stroke();
+
+      // Load Terminal End Arrow / Circle
+      ctx.fillStyle = '#34d399';
+      ctx.beginPath();
+      ctx.arc(x + 50, startY + 240, 4, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+    // 10. Compliance Normative Stamp
+    ctx.fillStyle = isDropExceeded ? 'rgba(244, 63, 94, 0.15)' : 'rgba(16, 185, 129, 0.15)';
+    ctx.strokeStyle = isDropExceeded ? '#f43f5e' : '#10b981';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.roundRect(width - 320, height - 75, 300, 60, 10);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = isDropExceeded ? '#fca5a5' : '#34d399';
+    ctx.font = 'bold 10px sans-serif';
+    ctx.fillText(
+      isDropExceeded
+        ? '⚠️ ALIMENTADOR EXCEDE LÍMITE 3% (NORMA RIC N°04)'
+        : '✓ CUMPLE NORMATIVA SEC CHILE (RIC N°02, N°04, N°05)',
+      width - 310,
+      height - 58
+    );
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '9px sans-serif';
+    ctx.fillText(`Caída de Tensión Calculada: ${dropPercent.toFixed(2)}% (${dropVolts.toFixed(2)}V)`, width - 310, height - 44);
+    ctx.fillText(`Tensión Nominal: ${vNominal}V | Circuito Básico TE1`, width - 310, height - 30);
+
+  }, [isThreePhase, feederLength, feederWireSection, iga, dps, rcds, circuits, vNominal, dropVolts, dropPercent, isDropExceeded]);
+
+  const handleExportCanvasImage = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const url = canvas.toDataURL('image/png');
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Diagrama_Unifilar_Canvas2D_TE1.png`;
+    a.click();
+  };
+
+  return (
+    <div className="space-y-3 bg-slate-950 p-4 rounded-2xl border border-slate-800">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <Zap className="w-5 h-5 text-amber-400" />
+          <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+            Motor de Renderizado Canvas 2D - Diagrama Unifilar Autogenerado
+          </h3>
+        </div>
+
+        <button
+          onClick={handleExportCanvasImage}
+          className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold px-3 py-1.5 rounded-lg border border-slate-700 transition-all shadow self-start sm:self-auto"
+        >
+          <Download className="w-3.5 h-3.5 text-indigo-400" />
+          <span>Exportar Imagen Canvas PNG</span>
+        </button>
+      </div>
+
+      <div className="overflow-x-auto custom-scrollbar border border-slate-800 rounded-xl bg-slate-900 p-2">
+        <canvas ref={canvasRef} className="block mx-auto rounded-lg shadow-inner" />
+      </div>
+    </div>
+  );
+};
+
 interface SingleLineDiagramTabProps {
   rooms: RoomData[];
   highAppliances: HighAppliance[];
@@ -675,6 +1046,29 @@ export const SingleLineDiagramTab: React.FC<SingleLineDiagramTabProps> = ({
           </div>
         )}
       </div>
+
+      {/* NUEVO MÓDULO: RENDERIZADO AUTOMÁTICO EN MOTOR CANVAS 2D CAD */}
+      <SingleLineCanvasRenderer
+        isThreePhase={isThreePhase}
+        feederLength={feederLength || 20}
+        feederWireSection={currentSection}
+        iga={{
+          amps: igaAmps,
+          curve: igaCurve,
+          breakingCapacity: igaBreaking,
+          poles: igaPoles,
+        }}
+        dps={{
+          voltage: dpsVoltage,
+          dischargeCurrent: dpsDischarge,
+        }}
+        rcds={specs.rcds || {}}
+        circuits={circuits}
+        vNominal={vNominal}
+        dropVolts={currentDrop.dropVolts}
+        dropPercent={currentDrop.dropPercent}
+        isDropExceeded={isSectionInsufficient || currentDrop.dropPercent > maxAllowedDropPercent}
+      />
 
       {/* DOCUMENTO Y DIAGRAMA IMPRIMIBLE COMPLETO PARA PDF (REF: diagramDocRef) */}
       <div

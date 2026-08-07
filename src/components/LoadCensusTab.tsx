@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
   RoomData, 
   HighAppliance, 
@@ -41,7 +41,11 @@ import {
   ArrowRight,
   Edit3,
   X,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Moon,
+  Sun,
+  Snowflake,
+  Thermometer
 } from 'lucide-react';
 import { PlanScannerModal } from './PlanScannerModal';
 
@@ -269,6 +273,72 @@ export function LoadCensusTab({
     return { rating: '3x32A (Trifásico)', wire: '6.0 mm² x3' };
   };
   const recIGA = getRecommendedIGA(estimatedAmps220V);
+
+  // --- MÓDULO RIC N°02: Demanda Máxima y Selector de Escenarios de Consumo ---
+  const [contractedCapacityKW, setContractedCapacityKW] = useState<number>(5.5); // Capacidad del empalme existente (kW)
+  const [simultaneityMode, setSimultaneityMode] = useState<
+    'ric02_residential' | 'min_base' | 'peak_max' | 'summer_ac' | 'winter_heat' | 'ric02_commercial' | 'custom'
+  >('ric02_residential');
+  const [customFs, setCustomFs] = useState<number>(0.70);
+
+  const ric02Demand = useMemo(() => {
+    const totalLightWatts = rooms.reduce((s, r) => s + (r.lightPoints || 0) * 100, 0);
+    const totalSocketWatts = rooms.reduce((s, r) => s + (r.socketPoints || 0) * 250, 0);
+    const roomDevWatts = rooms.reduce((s, r) => s + (r.devices || []).reduce((ds, d) => ds + d.powerWatts * d.quantity, 0), 0);
+    const highWatts = highAppliances.reduce((s, h) => s + (h.powerWatts || 0), 0);
+    const totalInstalledW = totalLightWatts + totalSocketWatts + roomDevWatts + highWatts;
+    const totalInstalledKWNum = Math.round((totalInstalledW / 1000) * 100) / 100;
+
+    let demandedWatts = 0;
+    if (simultaneityMode === 'ric02_residential') {
+      // Normativa RIC N°02 Tabla Alumbrado y Enchufes Residenciales:
+      // Alumbrado: Primeros 3.000 W al 100% (1.0), exceso al 35% (0.35)
+      const lightDemanded = Math.min(totalLightWatts, 3000) + Math.max(0, totalLightWatts - 3000) * 0.35;
+      // Enchufes: Primeros 3.000 W al 100% (1.0), exceso al 50% (0.50)
+      const socketDemanded = Math.min(totalSocketWatts, 3000) + Math.max(0, totalSocketWatts - 3000) * 0.50;
+      // Gran Consumo: Primeras 2 cargas al 100%, resto al 75%
+      const sortedHigh = [...highAppliances].sort((a, b) => (b.powerWatts || 0) - (a.powerWatts || 0));
+      const highDemanded = sortedHigh.reduce((acc, h, idx) => acc + (h.powerWatts || 0) * (idx < 2 ? 1.0 : 0.75), 0);
+      // Dispositivos extra en recintos
+      const devDemanded = roomDevWatts * 0.60;
+
+      demandedWatts = lightDemanded + socketDemanded + highDemanded + devDemanded;
+    } else if (simultaneityMode === 'min_base') {
+      // Escenario Consumo Mínimo / Standby Nocturno
+      demandedWatts = totalLightWatts * 0.10 + totalSocketWatts * 0.15 + highWatts * 0.20 + roomDevWatts * 0.15;
+    } else if (simultaneityMode === 'peak_max') {
+      // Escenario Consumo Pico / Carga Máxima Simultánea
+      demandedWatts = totalLightWatts * 0.90 + totalSocketWatts * 0.85 + highWatts * 0.95 + roomDevWatts * 0.85;
+    } else if (simultaneityMode === 'summer_ac') {
+      // Escenario Verano (Climatización Aire Acondicionado & Piscina)
+      demandedWatts = totalLightWatts * 0.45 + totalSocketWatts * 0.60 + highWatts * 0.95 + roomDevWatts * 0.60;
+    } else if (simultaneityMode === 'winter_heat') {
+      // Escenario Invierno (Calefacción Eléctrica & Agua Caliente)
+      demandedWatts = totalLightWatts * 0.80 + totalSocketWatts * 0.75 + highWatts * 0.95 + roomDevWatts * 0.70;
+    } else if (simultaneityMode === 'ric02_commercial') {
+      // RIC N°02 Comercial: 100% primeros 10.000 W, 70% exceso
+      demandedWatts = Math.min(totalInstalledW, 10000) + Math.max(0, totalInstalledW - 10000) * 0.70;
+    } else {
+      demandedWatts = totalInstalledW * customFs;
+    }
+
+    const maxDemandKW = Math.max(0.1, Math.round((demandedWatts / 1000) * 100) / 100);
+    const effectiveFs = totalInstalledKWNum > 0 ? Math.round((maxDemandKW / totalInstalledKWNum) * 100) / 100 : 1.0;
+    const capacityRatioPercent = Math.round((maxDemandKW / (contractedCapacityKW || 5.5)) * 100);
+    const isOverCapacity = maxDemandKW > (contractedCapacityKW || 5.5);
+    const differenceKW = Math.abs(Math.round((maxDemandKW - (contractedCapacityKW || 5.5)) * 100) / 100);
+    const estimatedAmps220V = Math.round((maxDemandKW * 1000) / 220);
+
+    return {
+      totalInstalledKWNum,
+      maxDemandKW,
+      effectiveFs,
+      capacityRatioPercent,
+      isOverCapacity,
+      differenceKW,
+      estimatedAmps220V,
+    };
+  }, [rooms, highAppliances, contractedCapacityKW, simultaneityMode, customFs]);
 
   // Handlers Mode 1: Censo
   const handleAddRoom = (e: React.FormEvent) => {
@@ -834,6 +904,289 @@ export function LoadCensusTab({
                 <span>IGA Sugerido</span>
               </div>
               <div className="text-lg font-bold text-purple-300 mt-0.5">{recIGA.rating}</div>
+            </div>
+          </div>
+
+          {/* MÓDULO NORMATIVA RIC N°02: CÁLCULO DE DEMANDA MÁXIMA Y HERRAMIENTA SELECTOR DE ESCENARIOS */}
+          <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-3">
+              <div>
+                <div className="flex items-center gap-2 text-fuchsia-400 font-bold text-xs uppercase tracking-wider">
+                  <Activity className="w-4 h-4 text-fuchsia-400" />
+                  <span>Módulo SEC RIC N°02 • Simulación de Cargas & Demanda Máxima</span>
+                </div>
+                <h3 className="text-base font-bold text-white mt-0.5">
+                  Herramienta de Selección de Escenario de Consumo en Tiempo Real
+                </h3>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] text-slate-400 font-bold uppercase">Empalme Contratado:</span>
+                <select
+                  value={contractedCapacityKW}
+                  onChange={(e) => setContractedCapacityKW(parseFloat(e.target.value))}
+                  className="bg-slate-950 border border-slate-700 text-amber-300 text-xs font-bold rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-fuchsia-500 font-mono"
+                >
+                  <option value={3.3}>3.30 kW (Monofásico 15A)</option>
+                  <option value={5.5}>5.50 kW (Monofásico 25A - Estándar)</option>
+                  <option value={8.8}>8.80 kW (Monofásico 40A)</option>
+                  <option value={11.0}>11.00 kW (Monofásico 50A)</option>
+                  <option value={15.0}>15.00 kW (Trifásico 25A)</option>
+                  <option value={27.0}>27.00 kW (Trifásico 40A)</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Visual Scenario Selector Buttons */}
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-slate-300 uppercase tracking-wider block">
+                Seleccionar Escenario de Uso Operativo:
+              </label>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSimultaneityMode('ric02_residential')}
+                  className={`p-2.5 rounded-xl border text-left transition-all flex flex-col justify-between ${
+                    simultaneityMode === 'ric02_residential'
+                      ? 'bg-fuchsia-600/20 border-fuchsia-500 text-white shadow-lg ring-1 ring-fuchsia-500/50'
+                      : 'bg-slate-950/80 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <Activity className="w-4 h-4 text-fuchsia-400" />
+                    <span className="text-[10px] font-mono font-bold text-fuchsia-300">RIC N°02</span>
+                  </div>
+                  <div className="text-xs font-bold text-slate-200">Normativo SEC</div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">Estándar reglamentario</div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setSimultaneityMode('min_base')}
+                  className={`p-2.5 rounded-xl border text-left transition-all flex flex-col justify-between ${
+                    simultaneityMode === 'min_base'
+                      ? 'bg-indigo-600/20 border-indigo-500 text-white shadow-lg ring-1 ring-indigo-500/50'
+                      : 'bg-slate-950/80 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <Moon className="w-4 h-4 text-indigo-400" />
+                    <span className="text-[10px] font-mono font-bold text-indigo-300">Min</span>
+                  </div>
+                  <div className="text-xs font-bold text-slate-200">Consumo Mínimo</div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">Reposo y standby nocturno</div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setSimultaneityMode('peak_max')}
+                  className={`p-2.5 rounded-xl border text-left transition-all flex flex-col justify-between ${
+                    simultaneityMode === 'peak_max'
+                      ? 'bg-amber-600/20 border-amber-500 text-white shadow-lg ring-1 ring-amber-500/50'
+                      : 'bg-slate-950/80 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <Zap className="w-4 h-4 text-amber-400" />
+                    <span className="text-[10px] font-mono font-bold text-amber-300">Pico</span>
+                  </div>
+                  <div className="text-xs font-bold text-slate-200">Consumo Pico</div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">Demanda máxima total</div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setSimultaneityMode('summer_ac')}
+                  className={`p-2.5 rounded-xl border text-left transition-all flex flex-col justify-between ${
+                    simultaneityMode === 'summer_ac'
+                      ? 'bg-cyan-600/20 border-cyan-500 text-white shadow-lg ring-1 ring-cyan-500/50'
+                      : 'bg-slate-950/80 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <Sun className="w-4 h-4 text-cyan-400" />
+                    <span className="text-[10px] font-mono font-bold text-cyan-300">Verano</span>
+                  </div>
+                  <div className="text-xs font-bold text-slate-200">Consumo Verano</div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">Climatización AC + Piscina</div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setSimultaneityMode('winter_heat')}
+                  className={`p-2.5 rounded-xl border text-left transition-all flex flex-col justify-between ${
+                    simultaneityMode === 'winter_heat'
+                      ? 'bg-sky-600/20 border-sky-500 text-white shadow-lg ring-1 ring-sky-500/50'
+                      : 'bg-slate-950/80 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <Snowflake className="w-4 h-4 text-sky-400" />
+                    <span className="text-[10px] font-mono font-bold text-sky-300">Invierno</span>
+                  </div>
+                  <div className="text-xs font-bold text-slate-200">Consumo Invierno</div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">Calefacción + Termoeléctrico</div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setSimultaneityMode('custom')}
+                  className={`p-2.5 rounded-xl border text-left transition-all flex flex-col justify-between ${
+                    simultaneityMode === 'custom'
+                      ? 'bg-teal-600/20 border-teal-500 text-white shadow-lg ring-1 ring-teal-500/50'
+                      : 'bg-slate-950/80 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <Sliders className="w-4 h-4 text-teal-400" />
+                    <span className="text-[10px] font-mono font-bold text-teal-300">Ajuste</span>
+                  </div>
+                  <div className="text-xs font-bold text-slate-200">Factor Libre</div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">Ajuste manual de Fs</div>
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+              {/* Controls Column */}
+              <div className="md:col-span-5 bg-slate-950 p-4 rounded-xl border border-slate-800/80 space-y-3">
+                <div className="space-y-1">
+                  <label className="block text-xs font-bold text-slate-300">
+                    Capacidad Empalme Existente (kW):
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={contractedCapacityKW}
+                      onChange={(e) => setContractedCapacityKW(parseFloat(e.target.value))}
+                      className="flex-1 bg-slate-900 border border-slate-700 text-white text-xs font-bold rounded-lg px-3 py-2 focus:outline-none focus:border-fuchsia-500 font-mono"
+                    >
+                      <option value={3.3}>3.30 kW (Monofásico S-6 / 15A)</option>
+                      <option value={5.5}>5.50 kW (Monofásico S-9 / 25A - Estándar)</option>
+                      <option value={8.8}>8.80 kW (Monofásico S-15 / 40A)</option>
+                      <option value={11.0}>11.00 kW (Monofásico S-20 / 50A)</option>
+                      <option value={15.0}>15.00 kW (Trifásico T-20 / 25A)</option>
+                      <option value={27.0}>27.00 kW (Trifásico T-30 / 40A)</option>
+                    </select>
+                    <input
+                      type="number"
+                      step="0.5"
+                      min="1"
+                      value={contractedCapacityKW}
+                      onChange={(e) => setContractedCapacityKW(parseFloat(e.target.value) || 1)}
+                      className="w-20 bg-slate-900 border border-slate-700 text-white text-xs font-mono font-bold rounded-lg px-2 py-2 text-center"
+                      placeholder="kW"
+                    />
+                  </div>
+                </div>
+
+                {simultaneityMode === 'custom' && (
+                  <div className="space-y-1 pt-1">
+                    <div className="flex justify-between text-xs text-slate-300 font-semibold">
+                      <span>Factor de Simultaneidad (Fs):</span>
+                      <span className="font-mono text-fuchsia-400 font-bold">{customFs.toFixed(2)}</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0.3"
+                      max="1.0"
+                      step="0.05"
+                      value={customFs}
+                      onChange={(e) => setCustomFs(parseFloat(e.target.value))}
+                      className="w-full accent-fuchsia-500 cursor-pointer"
+                    />
+                  </div>
+                )}
+
+                <div className="space-y-1.5 pt-2 border-t border-slate-800 text-xs">
+                  <div className="flex justify-between text-slate-400">
+                    <span>Potencia Conectada Total:</span>
+                    <strong className="text-white font-mono">{ric02Demand.totalInstalledKWNum} kW</strong>
+                  </div>
+                  <div className="flex justify-between text-slate-400">
+                    <span>Factor Aplicado (Fs):</span>
+                    <strong className="text-fuchsia-300 font-mono">{ric02Demand.effectiveFs}</strong>
+                  </div>
+                  <div className="flex justify-between text-slate-400">
+                    <span>Demanda Máxima Calculada:</span>
+                    <strong className="text-amber-300 font-mono font-bold">{ric02Demand.maxDemandKW} kW</strong>
+                  </div>
+                  <div className="flex justify-between text-slate-400">
+                    <span>Corriente Máxima a 220V:</span>
+                    <strong className="text-cyan-300 font-mono font-bold">~{ric02Demand.estimatedAmps220V} A</strong>
+                  </div>
+                </div>
+              </div>
+
+              {/* Status Comparison & Meter Column */}
+              <div className="md:col-span-7 flex flex-col justify-between bg-slate-950 p-4 rounded-xl border border-slate-800/80 space-y-3">
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-bold text-slate-300">
+                      Uso de Capacidad del Empalme ({contractedCapacityKW} kW)
+                    </span>
+                    <span
+                      className={`text-xs font-mono font-bold px-2 py-0.5 rounded ${
+                        ric02Demand.isOverCapacity
+                          ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                          : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                      }`}
+                    >
+                      {ric02Demand.capacityRatioPercent}% de Capacidad
+                    </span>
+                  </div>
+
+                  {/* Meter Bar */}
+                  <div className="w-full h-3.5 bg-slate-900 rounded-full overflow-hidden border border-slate-800 p-0.5 relative">
+                    <div
+                      className={`h-full rounded-full transition-all duration-500 ${
+                        ric02Demand.isOverCapacity ? 'bg-gradient-to-r from-amber-500 to-rose-600' : 'bg-gradient-to-r from-emerald-500 to-teal-400'
+                      }`}
+                      style={{ width: `${Math.min(100, ric02Demand.capacityRatioPercent)}%` }}
+                    ></div>
+                  </div>
+                </div>
+
+                {/* Status Conclusion Card */}
+                <div
+                  className={`p-3.5 rounded-xl border transition-all flex flex-col gap-1.5 ${
+                    ric02Demand.isOverCapacity
+                      ? 'bg-rose-950/60 border-rose-500/80 text-rose-200'
+                      : 'bg-emerald-950/60 border-emerald-500/80 text-emerald-200'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 font-bold text-xs uppercase">
+                      {ric02Demand.isOverCapacity ? (
+                        <>
+                          <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                          <span className="text-rose-300">CAPACIDAD DE EMPALME INSUFICIENTE</span>
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                          <span className="text-emerald-300">EMPALME SUFICIENTE PARA DEMANDA MÁXIMA</span>
+                        </>
+                      )}
+                    </div>
+                    <span className="text-[10px] font-mono font-bold">
+                      {ric02Demand.maxDemandKW} kW / {contractedCapacityKW} kW
+                    </span>
+                  </div>
+
+                  <p className="text-[11px] leading-relaxed">
+                    {ric02Demand.isOverCapacity ? (
+                      <>
+                        La demanda máxima calculada con simultaneidad RIC N°02 (<strong className="text-white">{ric02Demand.maxDemandKW} kW</strong>) supera la capacidad del empalme actual ({contractedCapacityKW} kW) en{' '}
+                        <strong className="text-rose-300 font-mono">{ric02Demand.differenceKW} kW</strong>. Se requiere solicitar aumento de capacidad a la empresa distribuidora (Anexo TE1 SEC).
+                      </>
+                    ) : (
+                      <>
+                        La demanda máxima calculada con simultaneidad RIC N°02 (<strong className="text-white">{ric02Demand.maxDemandKW} kW</strong>) está plenamente cubierta por el empalme existente ({contractedCapacityKW} kW) con una reserva de{' '}
+                        <strong className="text-emerald-300 font-mono">{ric02Demand.differenceKW} kW</strong> libres.
+                      </>
+                    )}
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -1697,7 +2050,7 @@ export function LoadCensusTab({
         <PlanScannerModal
           isOpen={isScannerOpen}
           onClose={() => setIsScannerOpen(false)}
-          onScanComplete={(scannedRooms, scannedHigh) => {
+          onApplyPlanToCensus={(scannedRooms, scannedHigh) => {
             setRooms(scannedRooms);
             setHighAppliances(scannedHigh);
             setIsScannerOpen(false);

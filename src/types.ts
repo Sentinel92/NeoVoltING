@@ -2,6 +2,17 @@
  * Types & Interfaces for NEOVOLT PRO - SEC Chile Electrical Engine
  */
 
+export interface BudgetHistoryRecord {
+  id: string;
+  projectId: string;
+  timestamp: string;
+  description: string;
+  previousTotal: number;
+  newTotal: number;
+  previousItems: BudgetItem[];
+  previousLaborCost: number;
+}
+
 export interface UserSession {
   email: string;
   name: string;

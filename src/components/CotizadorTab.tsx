@@ -22,7 +22,7 @@ import {
   Check,
 } from 'lucide-react';
 import { LaborPricingCalculatorModal } from './LaborPricingCalculatorModal';
-import { downloadPdfFromElement, generatePdfBlob } from '../utils/pdfGenerator';
+import { downloadPdfFromElement, generatePdfBlob, exportQuoteJsPdf } from '../utils/pdfGenerator';
 
 export interface ContractClause {
   id: string;
@@ -165,6 +165,17 @@ export const CotizadorTab: React.FC<CotizadorTabProps> = ({
   const handleDownloadPdf = async () => {
     setIsGeneratingPdf(true);
     try {
+      exportQuoteJsPdf({
+        items,
+        customer,
+        contractor,
+        laborCost,
+        includeContingency15,
+        clauses,
+        signatureDataUrl: clientSignature.signatureDataUrl,
+      });
+    } catch (err) {
+      console.warn('Fallback a renderizado DOM para PDF:', err);
       const clientSlug = (customer.name || 'Cliente').replace(/[^a-zA-Z0-9]/g, '_');
       await downloadPdfFromElement(quoteDocRef.current, {
         filename: `Cotizacion_Presupuesto_${clientSlug}.pdf`,

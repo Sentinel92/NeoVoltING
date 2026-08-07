@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import { UserSession, RoomData, HighAppliance } from '../types';
 import {
   FileText,
@@ -17,6 +17,10 @@ import {
   Share2,
   FileSpreadsheet,
   Loader2,
+  Copy,
+  Check,
+  Code,
+  FileCode,
 } from 'lucide-react';
 import { downloadPdfFromElement } from '../utils/pdfGenerator';
 
@@ -67,9 +71,10 @@ export const Te1DeclarationTab: React.FC<Te1DeclarationTabProps> = ({
     declarationType: 'Instalación Nueva en BT (Baja Tensión)',
   });
 
-  const [activeReportSubTab, setActiveReportSubTab] = useState<'te1_form' | 'memory_report' | 'protocol_report'>('te1_form');
+  const [activeReportSubTab, setActiveReportSubTab] = useState<'te1_form' | 'memory_report' | 'protocol_report' | 'json_export'>('te1_form');
   const [isGeneratingAiReport, setIsGeneratingAiReport] = useState(false);
   const [aiCustomReportText, setAiCustomReportText] = useState<string | null>(null);
+  const [copiedJson, setCopiedJson] = useState(false);
 
   // Total Load calculation
   const totalWattsFromRooms = rooms.reduce((acc, room) => {
@@ -81,6 +86,83 @@ export const Te1DeclarationTab: React.FC<Te1DeclarationTabProps> = ({
   const totalDeclaredWatts = totalWattsFromRooms + totalWattsFromHeavy || 6500;
   const totalDeclaredKw = (totalDeclaredWatts / 1000).toFixed(2);
 
+  // Calculated SEC JSON structured payload
+  const calculatedSecData = useMemo(() => {
+    const potenciaAlumbradoKw = (rooms.reduce((acc, r) => acc + (r.lightPoints || 0) * 100, 0) / 1000).toFixed(2);
+    const potenciaEnchufesKw = (rooms.reduce((acc, r) => acc + (r.socketPoints || 0) * 250, 0) / 1000).toFixed(2);
+    const potenciaFuerzaKw = (highAppliances.reduce((acc, h) => acc + (h.powerWatts || 0), 0) / 1000).toFixed(2);
+
+    return {
+      formulario: 'TE1',
+      plataformaSEC: 'e-Declarador SEC Chile (sec.gob.cl)',
+      versionNormativa: 'Pliegos Técnicos RIC N°01 - N°11',
+      fechaGeneracion: new Date().toISOString(),
+      identificacionProyecto: {
+        tipoDeclaracion: project.declarationType,
+        destinoEdificacion: project.buildingDestination,
+        empresaDistribuidora: project.distributorCompany,
+        numeroClienteEmpresa: project.utilityContractNumber,
+      },
+      propietario: {
+        nombreRazonSocial: owner.name,
+        rutPropietario: owner.rut,
+        direccion: owner.address,
+        comuna: owner.commune,
+        region: owner.region,
+        telefono: owner.phone,
+        email: owner.email,
+      },
+      instaladorSEC: {
+        nombreCompleto: installer.name,
+        rutInstalador: installer.rut,
+        numeroLicenciaSEC: installer.secLicense,
+        claseLicencia: installer.secClass,
+        telefonoContacto: installer.phone,
+        comunaResidencia: installer.commune,
+      },
+      resumenPotenciaCalculada: {
+        potenciaTotalDeclaradaKw: parseFloat(totalDeclaredKw),
+        potenciaAlumbradoKw: parseFloat(potenciaAlumbradoKw),
+        potenciaEnchufesKw: parseFloat(potenciaEnchufesKw),
+        potenciaFuerzaFuerzasEspecialesKw: parseFloat(potenciaFuerzaKw),
+        tipoSuministro: isThreePhase ? 'Trifásico 380V / 50Hz' : 'Monofásico 220V / 50Hz',
+      },
+      dimensionamientoProtecciones: {
+        iga: {
+          amperajeNominal: isThreePhase ? '3x32A' : '1x32A',
+          curvaDisparo: 'Curva C',
+          poderDeCorte: isThreePhase ? '10 kA' : '6 kA',
+        },
+        protectorSobretensionesDPS: {
+          tensionUco: '275 V',
+          corrienteDescargaImax: '20 kA',
+          clase: 'Tipo 2 (Baja Tensión)',
+        },
+        diferencialesRCD: {
+          sensibilidad: '30 mA',
+          cantidadDiferenciales: Math.max(1, Math.ceil((rooms.length + highAppliances.length) / 3)),
+          reglaRIC05: 'Máximo 3 circuitos por cada diferencial',
+        },
+      },
+      alimentadorPrincipal: {
+        seccionConductorMm2: isThreePhase ? '5x6.0 mm² EVA' : '3x6.0 mm² EVA',
+        longitudAproximadaMetros: feederLength || 20,
+        tipoCanalizacion: 'Conduit Rígido 25mm Embutido/Sobrepuesto',
+      },
+      protocoloEnsayosRIC10: {
+        resistenciaPuestaTierraOhm: project.groundingResistanceOhm,
+        limiteNormativoTierraOhm: 20.0,
+        cumpleTierraRIC06: project.groundingResistanceOhm <= 20.0,
+        resistenciaAislamientoMohm: project.insulationResistanceMohm,
+        cumpleAislamientoRIC04: project.insulationResistanceMohm >= 1.0,
+        tiempoDisparoRcdMs: project.rcdDischargeTimeMs,
+        cumpleDisparoRIC05: project.rcdDischargeTimeMs <= 30.0,
+      },
+      detalleCensoRecintos: rooms,
+      cargasGranPotencia: highAppliances,
+    };
+  }, [owner, installer, project, rooms, highAppliances, totalDeclaredKw, isThreePhase, feederLength]);
+
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const te1DocRef = useRef<HTMLDivElement>(null);
 
@@ -88,10 +170,11 @@ export const Te1DeclarationTab: React.FC<Te1DeclarationTabProps> = ({
     setIsGeneratingPdf(true);
     try {
       const ownerSlug = (owner.name || 'Propietario').replace(/[^a-zA-Z0-9]/g, '_');
-      const subtabNames = {
+      const subtabNames: Record<string, string> = {
         te1_form: 'Declaracion_TE1_SEC',
         memory_report: 'Memoria_Explicativa_SEC',
         protocol_report: 'Protocolo_Mediciones_RIC10',
+        json_export: 'Estructura_JSON_TE1_SEC',
       };
       const docTitle = subtabNames[activeReportSubTab] || 'Declaracion_TE1_SEC';
 
@@ -149,32 +232,21 @@ export const Te1DeclarationTab: React.FC<Te1DeclarationTabProps> = ({
 
   // Export SEC JSON payload for portal
   const handleExportSecJson = () => {
-    const secData = {
-      tipoDeclaracion: 'TE1',
-      versionNormativa: 'RIC SEC N°01-N°11',
-      instalador: installer,
-      propietario: owner,
-      especificacionesTecnicas: {
-        potenciaDeclaradaKw: totalDeclaredKw,
-        tipoSuministro: isThreePhase ? 'Trifásico 380V' : 'Monofásico 220V',
-        empresaDistribuidora: project.distributorCompany,
-        numeroCliente: project.utilityContractNumber,
-        resistenciaTierraOhm: project.groundingResistanceOhm,
-        resistenciaAislamientoMohm: project.insulationResistanceMohm,
-        tiempoInyeccionDiferencialMs: project.rcdDischargeTimeMs,
-      },
-      recintos: rooms,
-      cargasEspeciales: highAppliances,
-      fechaDeclaracion: new Date().toISOString(),
-    };
-
-    const blob = new Blob([JSON.stringify(secData, null, 2)], { type: 'application/json' });
+    const jsonString = JSON.stringify(calculatedSecData, null, 2);
+    const blob = new Blob([jsonString], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = `DECLARACION_TE1_SEC_${owner.rut.replace(/[^0-9kK]/g, '')}.json`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const handleCopySecJson = () => {
+    const jsonString = JSON.stringify(calculatedSecData, null, 2);
+    navigator.clipboard.writeText(jsonString);
+    setCopiedJson(true);
+    setTimeout(() => setCopiedJson(false), 2000);
   };
 
   return (
@@ -423,6 +495,18 @@ export const Te1DeclarationTab: React.FC<Te1DeclarationTabProps> = ({
               <ShieldCheck className="w-4 h-4" />
               <span>Protocolo Mediciones RIC N°10</span>
             </button>
+
+            <button
+              onClick={() => setActiveReportSubTab('json_export')}
+              className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+                activeReportSubTab === 'json_export'
+                  ? 'bg-fuchsia-600 text-white shadow-md'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <FileCode className="w-4 h-4 text-emerald-400" />
+              <span>JSON e-Declarador SEC</span>
+            </button>
           </div>
 
           {/* DOCUMENT BODY - PRINTABLE AREA */}
@@ -642,6 +726,47 @@ Propietario: ${owner.name} (RUT: ${owner.rut}).
                       Resultado: <span className="text-emerald-400">Continuidad 100% Verificada</span>
                     </div>
                   </div>
+                </div>
+              </div>
+            )}
+
+            {/* SubTab 4: JSON e-Declarador SEC Payload */}
+            {activeReportSubTab === 'json_export' && (
+              <div className="space-y-4 text-xs">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
+                  <div>
+                    <div className="flex items-center gap-2 text-emerald-400 font-bold uppercase tracking-wider text-[11px]">
+                      <Code className="w-4 h-4 text-emerald-400" />
+                      <span>Estructura JSON Oficial para Plataforma Web SEC (sec.gob.cl)</span>
+                    </div>
+                    <p className="text-slate-400 text-[11px] mt-0.5">
+                      Exportación de datos técnicos calculados (potencia total, protecciones, alimentador y tipo de instalación).
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={handleCopySecJson}
+                      className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold px-3 py-1.5 rounded-xl border border-slate-700 shadow"
+                    >
+                      {copiedJson ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                      <span>{copiedJson ? '¡Copiado!' : 'Copiar JSON'}</span>
+                    </button>
+
+                    <button
+                      onClick={handleExportSecJson}
+                      className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-3.5 py-1.5 rounded-xl shadow"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>Descargar JSON TE1</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 overflow-x-auto max-h-[480px]">
+                  <pre className="text-[11px] font-mono text-emerald-300 leading-relaxed whitespace-pre">
+                    {JSON.stringify(calculatedSecData, null, 2)}
+                  </pre>
                 </div>
               </div>
             )}
