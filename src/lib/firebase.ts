@@ -1,6 +1,7 @@
 import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
 import {
   initializeFirestore,
+  getFirestore,
   persistentLocalCache,
   persistentMultipleTabManager,
   doc,
@@ -38,18 +39,20 @@ try {
 
   if (app) {
     // 2. Firestore con Caché Local Instantánea (IndexedDB)
-    // Se utiliza initializeFirestore con persistentLocalCache (v9/v10+)
-    db = initializeFirestore(app, {
-      localCache: persistentLocalCache({
-        tabManager: persistentMultipleTabManager() // Soporte para múltiples pestañas abiertas
-      })
-    });
-    
-    isOfflinePersistenceEnabled = true;
-    console.log('[Firebase] Persistence habilitada con éxito en IndexedDB para funcionamiento offline.');
+    try {
+      db = initializeFirestore(app, {
+        localCache: persistentLocalCache({
+          tabManager: persistentMultipleTabManager()
+        })
+      });
+      isOfflinePersistenceEnabled = true;
+      console.log('[Firebase] Persistence habilitada con éxito en IndexedDB para funcionamiento offline.');
+    } catch {
+      db = getFirestore(app);
+      isOfflinePersistenceEnabled = true;
+    }
 
-    // 3. Functions configurado en la región correcta (reduce latencia)
-    // Definir explícitamente la región sudamericana para menor latencia desde Chile/Latam
+    // 3. Functions configurado en la región correcta
     functions = getFunctions(app, 'southamerica-east1');
   }
 } catch (err) {

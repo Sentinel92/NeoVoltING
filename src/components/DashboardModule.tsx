@@ -120,6 +120,7 @@ const parseProjectDate = (dateStr?: string): Date | null => {
 
 export const DashboardModule: React.FC<DashboardModuleProps> = ({
   projects,
+  clients = [],
   onNavigateToTab,
   onSelectProjectForQuote,
 }) => {

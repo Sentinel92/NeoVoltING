@@ -55,7 +55,7 @@ export function ClientsDatabaseTab({
     rut: '',
     address: '',
     city: 'Santiago',
-    propertyType: 'Casa Residencial',
+    propertyType: 'Residencial',
     notes: '',
   });
 
@@ -75,7 +75,7 @@ export function ClientsDatabaseTab({
       rut: '',
       address: '',
       city: 'Santiago',
-      propertyType: 'Casa Residencial',
+      propertyType: 'Residencial',
       notes: '',
     });
     setShowForm(true);
@@ -112,7 +112,7 @@ export function ClientsDatabaseTab({
         rut: formData.rut?.trim() || '',
         address: formData.address?.trim() || '',
         city: formData.city?.trim() || 'Santiago',
-        propertyType: formData.propertyType || 'Casa Residencial',
+        propertyType: formData.propertyType || 'Residencial',
         notes: formData.notes?.trim() || '',
         createdAt: new Date().toISOString().split('T')[0],
       };
@@ -429,15 +429,14 @@ export function ClientsDatabaseTab({
                 <div>
                   <label className="block text-slate-300 font-bold mb-1">Tipo de Propiedad</label>
                   <select
-                    value={formData.propertyType || 'Casa Residencial'}
-                    onChange={(e) => setFormData({ ...formData, propertyType: e.target.value })}
+                    value={formData.propertyType || 'Residencial'}
+                    onChange={(e) => setFormData({ ...formData, propertyType: e.target.value as any })}
                     className="w-full bg-slate-950 border border-slate-800 text-white rounded-xl p-2.5 outline-none"
                   >
-                    <option value="Casa Residencial">Casa Residencial</option>
-                    <option value="Departamento">Departamento</option>
-                    <option value="Local Comercial">Local Comercial</option>
-                    <option value="Oficina">Oficina</option>
-                    <option value="Bodega / Industrial">Bodega / Industrial</option>
+                    <option value="Residencial">Residencial</option>
+                    <option value="Comercial">Comercial</option>
+                    <option value="Comunidad">Comunidad</option>
+                    <option value="Industrial">Industrial</option>
                   </select>
                 </div>
               </div>

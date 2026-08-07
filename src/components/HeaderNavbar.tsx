@@ -80,14 +80,21 @@ export const HeaderNavbar: React.FC<HeaderNavbarProps> = ({
                   </span>
                 )}
               </div>
+            ) : isCloudSyncing ? (
+              <div 
+                className="flex items-center gap-1.5 bg-fuchsia-500/10 text-fuchsia-300 border border-fuchsia-500/30 text-xs font-bold px-2.5 py-1.5 rounded-xl shadow-sm animate-pulse"
+                title="Sincronizando cambios con Firebase Firestore en segundo plano"
+              >
+                <RefreshCw className="w-3.5 h-3.5 text-fuchsia-400 animate-spin" />
+                <span className="hidden sm:inline">Sincronizando en 2° plano...</span>
+              </div>
             ) : pendingQueueCount > 0 ? (
               <button
                 onClick={onSyncNow}
-                disabled={isCloudSyncing}
                 className="flex items-center gap-1.5 bg-fuchsia-600/20 hover:bg-fuchsia-600/30 text-fuchsia-300 border border-fuchsia-500/50 text-xs font-bold px-2.5 py-1.5 rounded-xl transition-all shadow-sm active:scale-95 animate-pulse"
                 title="Sincronizar cambios pendientes acumulados offline con Firebase"
               >
-                <RefreshCw className={`w-3.5 h-3.5 text-fuchsia-400 ${isCloudSyncing ? 'animate-spin' : ''}`} />
+                <RefreshCw className="w-3.5 h-3.5 text-fuchsia-400" />
                 <span className="hidden sm:inline">Sincronizar Firebase ({pendingQueueCount})</span>
               </button>
             ) : (

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   UserSession, 
   RoomData, 
@@ -386,6 +386,32 @@ export default function App() {
     setActiveTab('projects');
   };
 
+  const handleSelectProjectForQuote = (project: ElectricalProject) => {
+    if (project.client) {
+      setCustomer({
+        name: project.client.name,
+        rut: project.client.rut || '',
+        address: project.client.address || '',
+        city: project.client.city || '',
+        phone: project.client.phone || '',
+        email: project.client.email || '',
+        emergencyPhone: project.client.emergencyPhone || '',
+        propertyType: project.client.propertyType || 'Residencial',
+      });
+    }
+    if (project.scopeItems) {
+      const convertedItems: BudgetItem[] = project.scopeItems.map((item) => ({
+        id: item.id,
+        name: item.description,
+        quantity: item.quantity,
+        price: item.unitPrice,
+        category: item.category as any,
+      }));
+      setBudgetItems(convertedItems);
+    }
+    setActiveTab('quote');
+  };
+
   const handleTransferProjectToQuote = (customerObj: CustomerDetails, items: BudgetItem[], laborAmount: number) => {
     setCustomer(customerObj);
     setBudgetItems(items);
@@ -608,8 +634,8 @@ export default function App() {
     },
   });
 
-  // Save to Cloud & Firebase Function with Offline Persistence & Queueing
-  const handleSaveToCloud = async () => {
+  // Save to Cloud & Firebase Function with Non-Blocking Background Sync
+  const handleSaveToCloud = async (isManual: boolean = true) => {
     if (!user.email) return;
     setIsCloudSyncing(true);
     const now = new Date().toISOString();
@@ -633,39 +659,43 @@ export default function App() {
         // Offline: Enqueue offline sync item
         enqueueOfflineSync(user.email, payload, 'FULL_BACKUP');
         setPendingQueueCount(getPendingSyncQueue().length);
-        setSyncToast({
-          message: '⚡ Guardado en almacenamiento local (Modo Offline). Se sincronizará prioritariamente con Firebase al conectarse a la red.',
-          type: 'warning',
-        });
-        setTimeout(() => setSyncToast(null), 6000);
+        if (isManual) {
+          setSyncToast({
+            message: '⚡ Guardado localmente en modo Offline. Se sincronizará prioritariamente al reconectar.',
+            type: 'warning',
+          });
+          setTimeout(() => setSyncToast(null), 5000);
+        }
       } else {
-        // Online: Save to Firebase Firestore & Cloud API
+        // Online: Save to Firebase Firestore & Cloud API asynchronously
         const fbResult = await saveUserDataToFirebase(user.email, payload);
         
         try {
-          await fetch('/api/cloud-sync/save', {
+          fetch('/api/cloud-sync/save', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ email: user.email, data: payload }),
-          });
+          }).catch(() => {});
         } catch (e) {
           console.warn('Servidor secundario de la nube inaccesible:', e);
         }
 
         // Flush any accumulated offline queue items
-        const flushRes = await flushOfflineSyncQueue();
+        await flushOfflineSyncQueue();
         setPendingQueueCount(getPendingSyncQueue().length);
 
         setLastCloudSyncTime(now);
         localStorage.setItem('neovolt_last_cloud_sync', now);
 
-        setSyncToast({
-          message: fbResult.success
-            ? '✅ Guardado y sincronizado con éxito en Firebase Firestore y servidor en la nube.'
-            : '✅ Datos guardados en la nube correctamente.',
-          type: 'success',
-        });
-        setTimeout(() => setSyncToast(null), 5000);
+        if (isManual) {
+          setSyncToast({
+            message: fbResult.success
+              ? '✅ Guardado y sincronizado con éxito en Firebase Firestore.'
+              : '✅ Datos guardados en la nube correctamente.',
+            type: 'success',
+          });
+          setTimeout(() => setSyncToast(null), 4000);
+        }
       }
     } catch (err) {
       console.error('Error al respaldar en la nube/Firebase:', err);
@@ -702,13 +732,13 @@ export default function App() {
           type: 'info',
         });
       }
-      setTimeout(() => setSyncToast(null), 5000);
+      setTimeout(() => setSyncToast(null), 4000);
     } finally {
       setIsCloudSyncing(false);
     }
   };
 
-  // Load from Cloud & Firebase Function
+  // Load from Cloud & Firebase Function silently in background
   const handleLoadFromCloud = async () => {
     if (!user.email) return;
     setIsCloudSyncing(true);
@@ -751,8 +781,6 @@ export default function App() {
           setLastCloudSyncTime(result.updatedAt);
           localStorage.setItem('neovolt_last_cloud_sync', result.updatedAt);
         }
-      } else {
-        await handleSaveToCloud();
       }
     } catch (err) {
       console.error('Error al cargar datos de la nube:', err);
@@ -766,6 +794,34 @@ export default function App() {
       handleLoadFromCloud();
     }
   }, [user.email]);
+
+  // Debounced background sync to Firebase when local state changes (optimistic)
+  const isFirstSyncRun = useRef(true);
+  useEffect(() => {
+    if (!user.isLoggedIn || !user.email) return;
+    if (isFirstSyncRun.current) {
+      isFirstSyncRun.current = false;
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      handleSaveToCloud(false);
+    }, 3500);
+
+    return () => clearTimeout(timer);
+  }, [
+    projects,
+    clients,
+    rooms,
+    highAppliances,
+    feederLength,
+    isThreePhase,
+    feederWireSection,
+    budgetItems,
+    customer,
+    contractor,
+    workReport,
+  ]);
 
   const handleAddItemToBudget = (item: BudgetItem) => {
     setBudgetItems((prev) => [...prev, item]);
@@ -819,7 +875,7 @@ export default function App() {
         setActiveTab={setActiveTab}
         customLogoUrl={contractor.customLogoUrl}
         isSecCertified={contractor.isSecCertified}
-        onSaveToCloud={handleSaveToCloud}
+        onSaveToCloud={() => handleSaveToCloud(true)}
         onLoadFromCloud={handleLoadFromCloud}
         onInstallApp={handleInstallApp}
         isCloudSyncing={isCloudSyncing}
@@ -829,32 +885,48 @@ export default function App() {
         onSyncNow={handleManualSync}
       />
 
-      {/* Sync Status Toast Banner */}
-      {syncToast && (
-        <div className="bg-slate-900 border-b border-slate-800 px-4 py-2 flex items-center justify-between text-xs font-semibold shadow-md animate-fadeIn">
-          <div className="flex items-center gap-2 max-w-7xl mx-auto w-full">
-            {syncToast.type === 'warning' ? (
-              <WifiOff className="w-4 h-4 text-amber-400 shrink-0" />
-            ) : syncToast.type === 'success' ? (
-              <Check className="w-4 h-4 text-emerald-400 shrink-0" />
-            ) : (
-              <RefreshCw className="w-4 h-4 text-fuchsia-400 shrink-0" />
-            )}
-            <span className={
-              syncToast.type === 'warning' ? 'text-amber-300' :
-              syncToast.type === 'success' ? 'text-emerald-300' : 'text-fuchsia-300'
-            }>
-              {syncToast.message}
-            </span>
-          </div>
-          <button 
-            onClick={() => setSyncToast(null)}
-            className="text-slate-400 hover:text-white p-1"
+      {/* Sync Status Toast Notification (Floating, Non-blocking) */}
+      <AnimatePresence>
+        {syncToast && (
+          <motion.div
+            initial={{ opacity: 0, y: 20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.95 }}
+            className="fixed bottom-20 right-4 sm:bottom-6 sm:right-6 z-50 max-w-md w-auto bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-2xl p-3.5 shadow-2xl flex items-center justify-between gap-3 text-xs font-semibold text-slate-200"
           >
-            <X className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      )}
+            <div className="flex items-center gap-2.5">
+              {syncToast.type === 'warning' ? (
+                <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30 shrink-0">
+                  <WifiOff className="w-4 h-4 animate-pulse" />
+                </div>
+              ) : syncToast.type === 'success' ? (
+                <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shrink-0">
+                  <Check className="w-4 h-4" />
+                </div>
+              ) : (
+                <div className="p-2 rounded-xl bg-fuchsia-500/20 text-fuchsia-400 border border-fuchsia-500/30 shrink-0">
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                </div>
+              )}
+              <div className="flex flex-col">
+                <span className="font-bold text-slate-100">Sincronización Firebase</span>
+                <span className={
+                  syncToast.type === 'warning' ? 'text-amber-300 font-normal' :
+                  syncToast.type === 'success' ? 'text-emerald-300 font-normal' : 'text-fuchsia-300 font-normal'
+                }>
+                  {syncToast.message}
+                </span>
+              </div>
+            </div>
+            <button 
+              onClick={() => setSyncToast(null)}
+              className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* PWA Install Instructions Modal */}
       {showPwaInstallGuide && (
@@ -911,23 +983,20 @@ export default function App() {
 
       {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 pb-20 sm:pb-6 space-y-6">
-        {isCloudSyncing ? (
-          <TabSkeletonScreen activeTabName={activeTab} isFirebaseSync={true} />
-        ) : (
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={activeTab}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.2, ease: 'easeOut' }}
-            >
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={activeTab}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.2, ease: 'easeOut' }}
+          >
               {activeTab === 'dashboard' && (
                 <DashboardModule
                   projects={projects}
                   clients={clients}
                   onNavigateToTab={setActiveTab}
-                  onSelectProjectForQuote={handleSelectClientForProject}
+                  onSelectProjectForQuote={handleSelectProjectForQuote}
                 />
               )}
 
@@ -1074,8 +1143,7 @@ export default function App() {
               )}
             </motion.div>
           </AnimatePresence>
-        )}
-      </main>
+        </main>
 
       {/* Mobile Bottom Thumb Navigation Bar */}
       <nav className="sm:hidden fixed bottom-0 left-0 right-0 z-50 bg-slate-900/95 backdrop-blur-md border-t border-slate-800 px-2 py-1.5 flex items-center justify-around text-[10px] text-slate-400 print:hidden">
