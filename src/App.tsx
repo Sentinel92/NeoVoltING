@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { SpeedInsights } from '@vercel/speed-insights/react';
 import { 
   UserSession, 
   RoomData, 
@@ -1284,6 +1285,9 @@ export default function App() {
           <span className="text-slate-400">Normativa Superintendencia de Electricidad y Combustibles (SEC Chile)</span>
         </div>
       </footer>
+
+      {/* Vercel Speed Insights */}
+      <SpeedInsights />
     </div>
   );
 }
