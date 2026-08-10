@@ -371,6 +371,7 @@ export interface ProjectVersion {
   materialsPriceNew: number;
   laborPriceOld: number;
   laborPriceNew: number;
+  scopeItemsOld?: ProjectScopeItem[];
 }
 
 export interface ElectricalProject {
@@ -381,6 +382,10 @@ export interface ElectricalProject {
   status: 'COTIZACION' | 'APROBADO' | 'EN_EJECUCION' | 'COMPLETADO' | 'CANCELADO';
   client: CustomerDetails;
   description: string;
+  isFaultDiagnosis?: boolean;
+  faultDiagnosisDetails?: string;
+  isModification?: boolean;
+  modificationDetails?: string;
   attachments: ProjectAttachment[];
   scopeItems: ProjectScopeItem[];
   laborPrice: number;
@@ -392,5 +397,6 @@ export interface ElectricalProject {
   updatedAt: string;
   targetDeadline?: string;
   boardConfig?: ProjectBoardConfig;
+  versionHistory?: ProjectVersion[];
 }
 

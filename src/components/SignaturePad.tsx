@@ -80,10 +80,11 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({
 
   const clearCanvas = () => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (canvas) {
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+      }
     }
     setHasDrawn(false);
     setCurrentSignature(null);
@@ -100,10 +101,10 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({
         <button
           onClick={clearCanvas}
           type="button"
-          className="print:hidden flex items-center gap-1 text-slate-400 hover:text-rose-400 text-xs px-2.5 py-1 rounded hover:bg-slate-800 transition-colors"
+          className="print:hidden flex items-center gap-1 text-slate-400 hover:text-rose-400 text-xs px-2.5 py-1 rounded hover:bg-slate-800 transition-colors font-semibold"
           title="Limpiar firma"
         >
-          <Eraser className="w-3.5 h-3.5" />
+          <Eraser className="w-3.5 h-3.5 text-rose-400" />
           <span>Limpiar</span>
         </button>
       </div>
@@ -115,6 +116,14 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({
             alt="Firma"
             className="max-h-24 object-contain filter invert-0"
           />
+          <button
+            type="button"
+            onClick={clearCanvas}
+            className="print:hidden flex items-center gap-1.5 text-xs text-rose-400 hover:text-rose-300 bg-rose-950/40 hover:bg-rose-900/60 border border-rose-800/60 px-3 py-1.5 rounded-xl transition-all font-semibold"
+          >
+            <Eraser className="w-3.5 h-3.5 text-rose-400" />
+            <span>Limpiar / Trazar Nueva Firma</span>
+          </button>
         </div>
       ) : (
         <div className="space-y-2">

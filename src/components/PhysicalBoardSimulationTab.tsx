@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import {
   Zap, Play, CheckCircle2, AlertTriangle, RotateCcw,
   Plus, Trash2, Users, Info, MonitorPlay, Database, LayoutGrid, Scale
@@ -224,6 +225,8 @@ export default function InteractiveBoardTab() {
     return { x: cursorPt.x, y: cursorPt.y };
   };
 
+  const [successPingCoords, setSuccessPingCoords] = useState<{x: number, y: number} | null>(null);
+
   const handleMouseMove = (e: React.MouseEvent) => {
     const pt = getSvgMousePos(e);
     setMousePos(pt);
@@ -236,6 +239,17 @@ export default function InteractiveBoardTab() {
   };
 
   const handleMouseUp = () => {
+    if (draggingCompId) {
+      // Snap to grid of 20x20
+      setComponents(comps => comps.map(c => {
+        if (c.id === draggingCompId) {
+          const snappedX = Math.round(c.x / 20) * 20;
+          const snappedY = Math.round(c.y / 20) * 20;
+          return { ...c, x: snappedX, y: snappedY };
+        }
+        return c;
+      }));
+    }
     setDraggingCompId(null);
   };
 
@@ -288,6 +302,11 @@ export default function InteractiveBoardTab() {
 
       if (!exists) {
         setWires([...wires, newWire]);
+        
+        // Trigger success connection effect
+        const pt = getTerminalAbsoluteCoords(comp.id, terminal.id);
+        setSuccessPingCoords(pt);
+        setTimeout(() => setSuccessPingCoords(null), 1000);
       }
       setActiveWireStart(null);
     }
@@ -602,13 +621,36 @@ export default function InteractiveBoardTab() {
                 />
               )}
 
+              {/* Success connection ping */}
+              <AnimatePresence>
+                {successPingCoords && (
+                  <motion.circle
+                    initial={{ r: 0, opacity: 0.8 }}
+                    animate={{ r: 30, opacity: 0 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.6, ease: "easeOut" }}
+                    cx={successPingCoords.x}
+                    cy={successPingCoords.y}
+                    fill="none"
+                    stroke="#10b981"
+                    strokeWidth="3"
+                    style={{ pointerEvents: 'none' }}
+                  />
+                )}
+              </AnimatePresence>
+
               {/* Components */}
               {/* Sort to draw dragged component on top */}
               {[...components].sort((a,b) => (a.id === draggingCompId ? 1 : b.id === draggingCompId ? -1 : 0)).map(comp => (
-                <g 
+                <motion.g 
                   key={comp.id} 
-                  transform={`translate(${comp.x}, ${comp.y})`}
-                  onMouseDown={(e) => handleComponentMouseDown(e, comp)}
+                  animate={{ x: comp.x, y: comp.y }}
+                  transition={{ 
+                    type: 'spring', 
+                    stiffness: draggingCompId === comp.id ? 800 : 300, 
+                    damping: draggingCompId === comp.id ? 40 : 25 
+                  }}
+                  onMouseDown={(e: React.MouseEvent) => handleComponentMouseDown(e, comp)}
                   className={draggingCompId === comp.id ? 'cursor-grabbing' : activeWireStart ? 'cursor-crosshair' : 'cursor-grab'}
                 >
                   
@@ -679,7 +721,7 @@ export default function InteractiveBoardTab() {
                       </g>
                     );
                   })}
-                </g>
+                </motion.g>
               ))}
             </svg>
           </div>

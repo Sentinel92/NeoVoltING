@@ -72,8 +72,8 @@ export const ProjectPhotoGallery: React.FC<ProjectPhotoGalleryProps> = ({
     }
 
     // 2. From work reports if available
-    if (project.workReports) {
-      project.workReports.forEach((wr, wrIdx) => {
+    if ((project as any).workReports) {
+      (project as any).workReports.forEach((wr: any, wrIdx: number) => {
         if (wr.photoPaths) {
           wr.photoPaths.forEach((pUrl, pIdx) => {
             photos.push({

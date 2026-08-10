@@ -1,5 +1,5 @@
 import React, { useState, useRef, useMemo } from 'react';
-import { UserSession, RoomData, HighAppliance } from '../types';
+import { UserSession, RoomData, HighAppliance, ContractorConfig } from '../types';
 import {
   FileText,
   Printer,
@@ -21,11 +21,50 @@ import {
   Check,
   Code,
   FileCode,
+  XCircle,
+  Info,
+  ShieldAlert,
+  UserCheck,
+  Wand2,
 } from 'lucide-react';
 import { downloadPdfFromElement } from '../utils/pdfGenerator';
 
+// Helper function for Chilean RUT validation (Módulo 11)
+export const validateChileanRut = (rutRaw: string): boolean => {
+  if (!rutRaw) return false;
+  const clean = rutRaw.replace(/[^0-9kK]/g, '');
+  if (clean.length < 8 || clean.length > 9) return false;
+  const body = clean.slice(0, -1);
+  const dv = clean.slice(-1).toUpperCase();
+  let sum = 0;
+  let multiplier = 2;
+  for (let i = body.length - 1; i >= 0; i--) {
+    sum += parseInt(body[i], 10) * multiplier;
+    multiplier = multiplier === 7 ? 2 : multiplier + 1;
+  }
+  const expectedDvNum = 11 - (sum % 11);
+  let expectedDv = '0';
+  if (expectedDvNum === 11) expectedDv = '0';
+  else if (expectedDvNum === 10) expectedDv = 'K';
+  else expectedDv = expectedDvNum.toString();
+
+  return dv === expectedDv;
+};
+
+// Helper function for email validation
+export const validateEmail = (email: string): boolean => {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+};
+
+// Helper function for phone validation
+export const validatePhone = (phone: string): boolean => {
+  const digits = phone.replace(/[^0-9]/g, '');
+  return digits.length >= 8;
+};
+
 interface Te1DeclarationTabProps {
   user: UserSession;
+  contractor?: ContractorConfig;
   rooms: RoomData[];
   highAppliances: HighAppliance[];
   feederLength: number;
@@ -34,6 +73,7 @@ interface Te1DeclarationTabProps {
 
 export const Te1DeclarationTab: React.FC<Te1DeclarationTabProps> = ({
   user,
+  contractor,
   rooms,
   highAppliances,
   feederLength,
@@ -50,15 +90,37 @@ export const Te1DeclarationTab: React.FC<Te1DeclarationTabProps> = ({
     email: 'jcmorales@gmail.com',
   });
 
-  // Instalador SEC state
-  const [installer, setInstaller] = useState({
-    name: user.name || 'Gonzalo Araya P.',
-    rut: user.secNumber ? '15.429.108-3' : '15.429.108-3',
-    secLicense: user.secNumber || 'SEC-84291-CL',
-    secClass: user.role === 'engineer' ? 'Clase A (Ingeniero)' : 'Clase B (Técnico)',
-    phone: '+56 9 9123 4567',
-    commune: 'Santiago',
-  });
+  // Instalador SEC state (Initialized with contractor data if available)
+  const [installer, setInstaller] = useState(() => ({
+    name: contractor?.installerName || user.name || 'Gonzalo Araya P.',
+    rut: contractor?.rut || '15.429.108-3',
+    secLicense: contractor?.secLicense || user.secNumber || 'SEC-84291-CL',
+    secClass: contractor?.secClass || (user.role === 'engineer' ? 'Clase A (Ingeniero)' : 'Clase B (Técnico)'),
+    phone: contractor?.phone || '+56 9 9123 4567',
+    commune: contractor?.address ? contractor.address.split(',')[0] : 'Santiago',
+  }));
+
+  const handleAutocompleteInstaller = () => {
+    if (contractor) {
+      setInstaller({
+        name: contractor.installerName || user.name || '',
+        rut: contractor.rut || '',
+        secLicense: contractor.secLicense || user.secNumber || '',
+        secClass: contractor.secClass || (user.role === 'engineer' ? 'Clase A (Ingeniero)' : 'Clase B (Técnico)'),
+        phone: contractor.phone || '',
+        commune: contractor.address ? contractor.address.split(',')[0] : 'Santiago',
+      });
+    } else {
+      setInstaller({
+        name: user.name || 'Gonzalo Araya P.',
+        rut: '15.429.108-3',
+        secLicense: user.secNumber || 'SEC-84291-CL',
+        secClass: user.role === 'engineer' ? 'Clase A (Ingeniero)' : 'Clase B (Técnico)',
+        phone: '+56 9 9123 4567',
+        commune: 'Santiago',
+      });
+    }
+  };
 
   // Proyecto TE1 Technical Specs state
   const [project, setProject] = useState({
@@ -75,6 +137,7 @@ export const Te1DeclarationTab: React.FC<Te1DeclarationTabProps> = ({
   const [isGeneratingAiReport, setIsGeneratingAiReport] = useState(false);
   const [aiCustomReportText, setAiCustomReportText] = useState<string | null>(null);
   const [copiedJson, setCopiedJson] = useState(false);
+  const [showValidationModal, setShowValidationModal] = useState(false);
 
   // Total Load calculation
   const totalWattsFromRooms = rooms.reduce((acc, room) => {
@@ -85,6 +148,72 @@ export const Te1DeclarationTab: React.FC<Te1DeclarationTabProps> = ({
   const totalWattsFromHeavy = highAppliances.reduce((acc, h) => acc + h.powerWatts, 0);
   const totalDeclaredWatts = totalWattsFromRooms + totalWattsFromHeavy || 6500;
   const totalDeclaredKw = (totalDeclaredWatts / 1000).toFixed(2);
+
+  // Real-Time Validation Rules for SEC Platform & RIC Standards
+  const validation = useMemo(() => {
+    const isOwnerRutValid = validateChileanRut(owner.rut);
+    const isInstallerRutValid = validateChileanRut(installer.rut);
+    const isOwnerEmailValid = validateEmail(owner.email);
+    const isOwnerPhoneValid = validatePhone(owner.phone);
+    const isInstallerPhoneValid = validatePhone(installer.phone);
+    const isOwnerNameValid = owner.name.trim().length >= 3;
+    const isOwnerAddressValid = owner.address.trim().length >= 3;
+    const isOwnerCommuneValid = owner.commune.trim().length >= 2;
+    const isInstallerNameValid = installer.name.trim().length >= 3;
+    const isSecLicenseValid = installer.secLicense.trim().length >= 4;
+    const isContractNumberValid = project.utilityContractNumber.trim().length >= 3;
+    const isDistributorValid = project.distributorCompany.trim().length >= 2;
+
+    // Normative technical checks (RIC N°10 / RIC N°06 / RIC N°04 / RIC N°05)
+    const isGroundingValid = project.groundingResistanceOhm > 0 && project.groundingResistanceOhm <= 20.0;
+    const isInsulationValid = project.insulationResistanceMohm >= 1.0;
+    const isRcdValid = project.rcdDischargeTimeMs > 0 && project.rcdDischargeTimeMs <= 30.0;
+    const isPowerValid = parseFloat(totalDeclaredKw) > 0;
+
+    const errors: { field: string; message: string; category: 'Propietario' | 'Instalador' | 'Técnico' }[] = [];
+
+    if (!isOwnerNameValid) errors.push({ field: 'owner.name', message: 'Nombre del propietario requerido (mín. 3 caracteres).', category: 'Propietario' });
+    if (!isOwnerRutValid) errors.push({ field: 'owner.rut', message: 'RUT del propietario inválido o con dígito verificador erróneo (Ej: 12.345.678-K).', category: 'Propietario' });
+    if (!isOwnerAddressValid) errors.push({ field: 'owner.address', message: 'Dirección de la instalación requerida.', category: 'Propietario' });
+    if (!isOwnerCommuneValid) errors.push({ field: 'owner.commune', message: 'Comuna de la instalación requerida.', category: 'Propietario' });
+    if (!isOwnerPhoneValid) errors.push({ field: 'owner.phone', message: 'Teléfono del propietario inválido (mínimo 8 dígitos).', category: 'Propietario' });
+    if (!isOwnerEmailValid) errors.push({ field: 'owner.email', message: 'Correo electrónico del propietario con formato inválido.', category: 'Propietario' });
+
+    if (!isInstallerNameValid) errors.push({ field: 'installer.name', message: 'Nombre del instalador requerido.', category: 'Instalador' });
+    if (!isInstallerRutValid) errors.push({ field: 'installer.rut', message: 'RUT del instalador inválido o con dígito verificador erróneo.', category: 'Instalador' });
+    if (!isSecLicenseValid) errors.push({ field: 'installer.secLicense', message: 'Licencia SEC requerida (mín. 4 caracteres).', category: 'Instalador' });
+    if (!isInstallerPhoneValid) errors.push({ field: 'installer.phone', message: 'Teléfono del instalador inválido.', category: 'Instalador' });
+
+    if (!isContractNumberValid) errors.push({ field: 'project.utilityContractNumber', message: 'N° de Cliente / Contrato de distribuidora requerido.', category: 'Técnico' });
+    if (!isDistributorValid) errors.push({ field: 'project.distributorCompany', message: 'Empresa distribuidora requerida.', category: 'Técnico' });
+    if (!isGroundingValid) errors.push({ field: 'project.groundingResistanceOhm', message: `Puesta a Tierra (${project.groundingResistanceOhm} Ω) fuera de norma RIC N°06 / N°10 (debe ser ≤ 20.0 Ω).`, category: 'Técnico' });
+    if (!isInsulationValid) errors.push({ field: 'project.insulationResistanceMohm', message: `Resistencia de Aislamiento (${project.insulationResistanceMohm} MΩ) fuera de norma RIC N°04 (debe ser ≥ 1.0 MΩ).`, category: 'Técnico' });
+    if (!isRcdValid) errors.push({ field: 'project.rcdDischargeTimeMs', message: `Tiempo disparo RCD (${project.rcdDischargeTimeMs} ms) fuera de norma RIC N°05 (debe ser ≤ 30.0 ms).`, category: 'Técnico' });
+    if (!isPowerValid) errors.push({ field: 'totalDeclaredKw', message: 'La potencia total declarada debe ser mayor a 0 kW.', category: 'Técnico' });
+
+    const isValid = errors.length === 0;
+
+    return {
+      isValid,
+      errors,
+      isOwnerRutValid,
+      isInstallerRutValid,
+      isOwnerEmailValid,
+      isOwnerPhoneValid,
+      isInstallerPhoneValid,
+      isOwnerNameValid,
+      isOwnerAddressValid,
+      isOwnerCommuneValid,
+      isInstallerNameValid,
+      isSecLicenseValid,
+      isContractNumberValid,
+      isDistributorValid,
+      isGroundingValid,
+      isInsulationValid,
+      isRcdValid,
+      isPowerValid,
+    };
+  }, [owner, installer, project, totalDeclaredKw]);
 
   // Calculated SEC JSON structured payload
   const calculatedSecData = useMemo(() => {
@@ -232,6 +361,10 @@ export const Te1DeclarationTab: React.FC<Te1DeclarationTabProps> = ({
 
   // Export SEC JSON payload for portal
   const handleExportSecJson = () => {
+    if (!validation.isValid) {
+      setShowValidationModal(true);
+      return;
+    }
     const jsonString = JSON.stringify(calculatedSecData, null, 2);
     const blob = new Blob([jsonString], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -240,6 +373,18 @@ export const Te1DeclarationTab: React.FC<Te1DeclarationTabProps> = ({
     a.download = `DECLARACION_TE1_SEC_${owner.rut.replace(/[^0-9kK]/g, '')}.json`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const handleForceExportJson = () => {
+    const jsonString = JSON.stringify(calculatedSecData, null, 2);
+    const blob = new Blob([jsonString], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `BORRADOR_TE1_SEC_${owner.rut.replace(/[^0-9kK]/g, '')}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setShowValidationModal(false);
   };
 
   const handleCopySecJson = () => {
@@ -267,20 +412,44 @@ export const Te1DeclarationTab: React.FC<Te1DeclarationTabProps> = ({
         <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
           <button
             onClick={handleExportSecJson}
-            className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold px-3 py-2 rounded-xl border border-slate-700 transition-all"
+            className={`flex items-center gap-2 text-xs font-bold px-3 py-2 rounded-xl border transition-all ${
+              validation.isValid
+                ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
+                : 'bg-amber-950/40 hover:bg-amber-900/60 text-amber-300 border-amber-800/60'
+            }`}
             title="Descargar archivo estructurado JSON para la plataforma e-Declarador SEC"
           >
             <Download className="w-4 h-4 text-emerald-400" />
             <span>e-Declarador JSON</span>
+            {!validation.isValid && (
+              <span className="bg-amber-500 text-slate-950 px-1.5 py-0.5 rounded-full text-[10px] font-black">
+                {validation.errors.length}
+              </span>
+            )}
           </button>
 
           <button
-            onClick={handleDownloadPdf}
+            onClick={() => {
+              if (!validation.isValid) {
+                setShowValidationModal(true);
+              } else {
+                handleDownloadPdf();
+              }
+            }}
             disabled={isGeneratingPdf}
-            className="flex items-center gap-2 bg-fuchsia-600 hover:bg-fuchsia-500 text-white text-xs font-bold px-4 py-2 rounded-xl shadow transition-all active:scale-95"
+            className={`flex items-center gap-2 text-white text-xs font-bold px-4 py-2 rounded-xl shadow transition-all active:scale-95 ${
+              validation.isValid
+                ? 'bg-fuchsia-600 hover:bg-fuchsia-500'
+                : 'bg-fuchsia-700/80 hover:bg-fuchsia-600 border border-fuchsia-500/50'
+            }`}
           >
             {isGeneratingPdf ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
             <span>{isGeneratingPdf ? 'Generando PDF...' : 'Generar PDF Documento'}</span>
+            {!validation.isValid && (
+              <span className="bg-amber-400 text-slate-950 px-1.5 py-0.5 rounded-full text-[10px] font-black">
+                !
+              </span>
+            )}
           </button>
 
           <button
@@ -298,6 +467,103 @@ export const Te1DeclarationTab: React.FC<Te1DeclarationTabProps> = ({
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left Column: Editable Form Fields (Hidden in Print) */}
         <div className="print:hidden lg:col-span-1 space-y-4">
+          
+          {/* REAL-TIME VALIDATION WIDGET */}
+          <div
+            className={`p-4 rounded-2xl border transition-all ${
+              validation.isValid
+                ? 'bg-emerald-950/30 border-emerald-800/60 text-emerald-200'
+                : 'bg-slate-900 border-amber-800/60 text-slate-200'
+            }`}
+          >
+            <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className={`w-5 h-5 ${validation.isValid ? 'text-emerald-400' : 'text-amber-400'}`} />
+                <div>
+                  <h3 className="text-xs font-extrabold uppercase tracking-wider text-white">
+                    Validación SEC en Tiempo Real
+                  </h3>
+                  <span className="text-[10px] text-slate-400">
+                    Formato e-Declarador & Pliegos RIC
+                  </span>
+                </div>
+              </div>
+              <span
+                className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 ${
+                  validation.isValid
+                    ? 'bg-emerald-900/80 text-emerald-300 border border-emerald-700'
+                    : 'bg-amber-900/80 text-amber-300 border border-amber-700'
+                }`}
+              >
+                {validation.isValid ? (
+                  <>
+                    <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                    100% VÁLIDO
+                  </>
+                ) : (
+                  <>
+                    <AlertTriangle className="w-3 h-3 text-amber-400" />
+                    {validation.errors.length} OBSERVACIONES
+                  </>
+                )}
+              </span>
+            </div>
+
+            {/* Micro Badges for Normative Items */}
+            <div className="grid grid-cols-2 gap-1.5 pt-2 text-[10px]">
+              <div className="flex items-center justify-between bg-slate-950/60 p-1.5 rounded-lg border border-slate-800">
+                <span className="text-slate-400">RUT Propietario</span>
+                {validation.isOwnerRutValid ? (
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                ) : (
+                  <XCircle className="w-3.5 h-3.5 text-rose-400" />
+                )}
+              </div>
+
+              <div className="flex items-center justify-between bg-slate-950/60 p-1.5 rounded-lg border border-slate-800">
+                <span className="text-slate-400">RUT Instalador</span>
+                {validation.isInstallerRutValid ? (
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                ) : (
+                  <XCircle className="w-3.5 h-3.5 text-rose-400" />
+                )}
+              </div>
+
+              <div className="flex items-center justify-between bg-slate-950/60 p-1.5 rounded-lg border border-slate-800">
+                <span className="text-slate-400">Tierra RIC06 (&le;20&Omega;)</span>
+                {validation.isGroundingValid ? (
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                ) : (
+                  <XCircle className="w-3.5 h-3.5 text-rose-400" />
+                )}
+              </div>
+
+              <div className="flex items-center justify-between bg-slate-950/60 p-1.5 rounded-lg border border-slate-800">
+                <span className="text-slate-400">Aisla. RIC04 (&ge;1M&Omega;)</span>
+                {validation.isInsulationValid ? (
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                ) : (
+                  <XCircle className="w-3.5 h-3.5 text-rose-400" />
+                )}
+              </div>
+            </div>
+
+            {!validation.isValid && (
+              <div className="mt-2 text-[11px] space-y-1 bg-slate-950/80 p-2.5 rounded-xl border border-amber-900/50">
+                <span className="font-bold text-amber-400 flex items-center gap-1 text-[10px]">
+                  <Info className="w-3 h-3" /> Requiere corrección para la plataforma de la SEC:
+                </span>
+                <ul className="list-disc list-inside text-slate-300 text-[10px] space-y-0.5 max-h-28 overflow-y-auto pr-1">
+                  {validation.errors.map((err, idx) => (
+                    <li key={idx} className="line-clamp-1">
+                      <span className="font-semibold text-amber-300">[{err.category}]</span> {err.message}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+
           {/* Owner Data */}
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
             <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2 border-b border-slate-800 pb-2">
@@ -307,64 +573,129 @@ export const Te1DeclarationTab: React.FC<Te1DeclarationTabProps> = ({
 
             <div className="space-y-2 text-xs">
               <div>
-                <label className="text-slate-400 font-semibold block mb-0.5">Nombre / Razón Social:</label>
+                <div className="flex items-center justify-between mb-0.5">
+                  <label className="text-slate-400 font-semibold block">Nombre / Razón Social:</label>
+                  {validation.isOwnerNameValid ? (
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                  ) : (
+                    <XCircle className="w-3.5 h-3.5 text-rose-400" />
+                  )}
+                </div>
                 <input
                   type="text"
                   value={owner.name}
                   onChange={(e) => setOwner({ ...owner, name: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-white font-bold focus:outline-none focus:border-fuchsia-500"
+                  className={`w-full bg-slate-950 border rounded-xl px-3 py-1.5 text-white font-bold focus:outline-none ${
+                    validation.isOwnerNameValid ? 'border-slate-800 focus:border-emerald-500' : 'border-rose-600/80 focus:border-rose-500'
+                  }`}
                 />
+                {!validation.isOwnerNameValid && (
+                  <span className="text-[10px] text-rose-400 block mt-0.5">Requerido por la SEC (mínimo 3 letras).</span>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="text-slate-400 font-semibold block mb-0.5">RUT Propietario:</label>
+                  <div className="flex items-center justify-between mb-0.5">
+                    <label className="text-slate-400 font-semibold block">RUT Propietario:</label>
+                    {validation.isOwnerRutValid ? (
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                    ) : (
+                      <XCircle className="w-3.5 h-3.5 text-rose-400" />
+                    )}
+                  </div>
                   <input
                     type="text"
                     value={owner.rut}
                     onChange={(e) => setOwner({ ...owner, rut: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 text-white font-mono focus:outline-none focus:border-fuchsia-500"
+                    placeholder="12.345.678-K"
+                    className={`w-full bg-slate-950 border rounded-xl px-2.5 py-1.5 text-white font-mono focus:outline-none ${
+                      validation.isOwnerRutValid ? 'border-slate-800 focus:border-emerald-500' : 'border-rose-600/80 focus:border-rose-500'
+                    }`}
                   />
+                  {!validation.isOwnerRutValid && (
+                    <span className="text-[9px] text-rose-400 block mt-0.5">Dígito Verificador erróneo.</span>
+                  )}
                 </div>
+
                 <div>
-                  <label className="text-slate-400 font-semibold block mb-0.5">Comuna:</label>
+                  <div className="flex items-center justify-between mb-0.5">
+                    <label className="text-slate-400 font-semibold block">Comuna:</label>
+                    {validation.isOwnerCommuneValid ? (
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                    ) : (
+                      <XCircle className="w-3.5 h-3.5 text-rose-400" />
+                    )}
+                  </div>
                   <input
                     type="text"
                     value={owner.commune}
                     onChange={(e) => setOwner({ ...owner, commune: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 text-white focus:outline-none focus:border-fuchsia-500"
+                    className={`w-full bg-slate-950 border rounded-xl px-2.5 py-1.5 text-white focus:outline-none ${
+                      validation.isOwnerCommuneValid ? 'border-slate-800 focus:border-emerald-500' : 'border-rose-600/80 focus:border-rose-500'
+                    }`}
                   />
                 </div>
               </div>
 
               <div>
-                <label className="text-slate-400 font-semibold block mb-0.5">Dirección de la Instalación:</label>
+                <div className="flex items-center justify-between mb-0.5">
+                  <label className="text-slate-400 font-semibold block">Dirección de la Instalación:</label>
+                  {validation.isOwnerAddressValid ? (
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                  ) : (
+                    <XCircle className="w-3.5 h-3.5 text-rose-400" />
+                  )}
+                </div>
                 <input
                   type="text"
                   value={owner.address}
                   onChange={(e) => setOwner({ ...owner, address: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-white focus:outline-none focus:border-fuchsia-500"
+                  className={`w-full bg-slate-950 border rounded-xl px-3 py-1.5 text-white focus:outline-none ${
+                    validation.isOwnerAddressValid ? 'border-slate-800 focus:border-emerald-500' : 'border-rose-600/80 focus:border-rose-500'
+                  }`}
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="text-slate-400 font-semibold block mb-0.5">Teléfono:</label>
+                  <div className="flex items-center justify-between mb-0.5">
+                    <label className="text-slate-400 font-semibold block">Teléfono:</label>
+                    {validation.isOwnerPhoneValid ? (
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                    ) : (
+                      <XCircle className="w-3.5 h-3.5 text-rose-400" />
+                    )}
+                  </div>
                   <input
                     type="text"
                     value={owner.phone}
                     onChange={(e) => setOwner({ ...owner, phone: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 text-white focus:outline-none focus:border-fuchsia-500"
+                    className={`w-full bg-slate-950 border rounded-xl px-2.5 py-1.5 text-white focus:outline-none ${
+                      validation.isOwnerPhoneValid ? 'border-slate-800 focus:border-emerald-500' : 'border-rose-600/80 focus:border-rose-500'
+                    }`}
                   />
                 </div>
                 <div>
-                  <label className="text-slate-400 font-semibold block mb-0.5">Email:</label>
+                  <div className="flex items-center justify-between mb-0.5">
+                    <label className="text-slate-400 font-semibold block">Email:</label>
+                    {validation.isOwnerEmailValid ? (
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                    ) : (
+                      <XCircle className="w-3.5 h-3.5 text-rose-400" />
+                    )}
+                  </div>
                   <input
                     type="email"
                     value={owner.email}
                     onChange={(e) => setOwner({ ...owner, email: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 text-white focus:outline-none focus:border-fuchsia-500"
+                    className={`w-full bg-slate-950 border rounded-xl px-2.5 py-1.5 text-white focus:outline-none ${
+                      validation.isOwnerEmailValid ? 'border-slate-800 focus:border-emerald-500' : 'border-rose-600/80 focus:border-rose-500'
+                    }`}
                   />
+                  {!validation.isOwnerEmailValid && (
+                    <span className="text-[9px] text-rose-400 block mt-0.5">Email inválido.</span>
+                  )}
                 </div>
               </div>
             </div>
@@ -372,39 +703,82 @@ export const Te1DeclarationTab: React.FC<Te1DeclarationTabProps> = ({
 
           {/* Installer Data */}
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
-            <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2 border-b border-slate-800 pb-2">
-              <ShieldCheck className="w-4 h-4 text-emerald-400" />
-              <span>2. Datos del Instalador Autorizado SEC</span>
-            </h3>
+            <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+              <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                <span>2. Datos del Instalador Autorizado SEC</span>
+              </h3>
+
+              <button
+                type="button"
+                onClick={handleAutocompleteInstaller}
+                className="flex items-center gap-1.5 bg-fuchsia-950/80 hover:bg-fuchsia-900 text-fuchsia-300 border border-fuchsia-700/60 text-[10px] font-bold px-2.5 py-1 rounded-xl transition-all shadow-sm active:scale-95"
+                title="Autocompletar Nombre, RUT, Licencia SEC y Teléfono desde tu Perfil Técnico"
+              >
+                <UserCheck className="w-3.5 h-3.5 text-fuchsia-400" />
+                <span>Autocompletar Perfil</span>
+              </button>
+            </div>
 
             <div className="space-y-2 text-xs">
               <div>
-                <label className="text-slate-400 font-semibold block mb-0.5">Nombre del Instalador:</label>
+                <div className="flex items-center justify-between mb-0.5">
+                  <label className="text-slate-400 font-semibold block">Nombre del Instalador:</label>
+                  {validation.isInstallerNameValid ? (
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                  ) : (
+                    <XCircle className="w-3.5 h-3.5 text-rose-400" />
+                  )}
+                </div>
                 <input
                   type="text"
                   value={installer.name}
                   onChange={(e) => setInstaller({ ...installer, name: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-white font-bold focus:outline-none"
+                  className={`w-full bg-slate-950 border rounded-xl px-3 py-1.5 text-white font-bold focus:outline-none ${
+                    validation.isInstallerNameValid ? 'border-slate-800 focus:border-emerald-500' : 'border-rose-600/80 focus:border-rose-500'
+                  }`}
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="text-slate-400 font-semibold block mb-0.5">N° Licencia SEC:</label>
+                  <div className="flex items-center justify-between mb-0.5">
+                    <label className="text-slate-400 font-semibold block">RUT Instalador:</label>
+                    {validation.isInstallerRutValid ? (
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                    ) : (
+                      <XCircle className="w-3.5 h-3.5 text-rose-400" />
+                    )}
+                  </div>
+                  <input
+                    type="text"
+                    value={installer.rut}
+                    onChange={(e) => setInstaller({ ...installer, rut: e.target.value })}
+                    className={`w-full bg-slate-950 border rounded-xl px-2.5 py-1.5 text-white font-mono focus:outline-none ${
+                      validation.isInstallerRutValid ? 'border-slate-800 focus:border-emerald-500' : 'border-rose-600/80 focus:border-rose-500'
+                    }`}
+                  />
+                  {!validation.isInstallerRutValid && (
+                    <span className="text-[9px] text-rose-400 block mt-0.5">RUT inválido.</span>
+                  )}
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-0.5">
+                    <label className="text-slate-400 font-semibold block">N° Licencia SEC:</label>
+                    {validation.isSecLicenseValid ? (
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                    ) : (
+                      <XCircle className="w-3.5 h-3.5 text-rose-400" />
+                    )}
+                  </div>
                   <input
                     type="text"
                     value={installer.secLicense}
                     onChange={(e) => setInstaller({ ...installer, secLicense: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 text-emerald-400 font-mono font-bold focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="text-slate-400 font-semibold block mb-0.5">Clase Licencia:</label>
-                  <input
-                    type="text"
-                    value={installer.secClass}
-                    onChange={(e) => setInstaller({ ...installer, secClass: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 text-white focus:outline-none"
+                    className={`w-full bg-slate-950 border rounded-xl px-2.5 py-1.5 text-emerald-400 font-mono font-bold focus:outline-none ${
+                      validation.isSecLicenseValid ? 'border-slate-800 focus:border-emerald-500' : 'border-rose-600/80 focus:border-rose-500'
+                    }`}
                   />
                 </div>
               </div>
@@ -431,25 +805,49 @@ export const Te1DeclarationTab: React.FC<Te1DeclarationTabProps> = ({
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="text-slate-400 font-semibold block mb-0.5">Res. Tierra (Ω):</label>
+                  <div className="flex items-center justify-between mb-0.5">
+                    <label className="text-slate-400 font-semibold block">Res. Tierra (&Omega;):</label>
+                    {validation.isGroundingValid ? (
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                    ) : (
+                      <XCircle className="w-3.5 h-3.5 text-rose-400" />
+                    )}
+                  </div>
                   <input
                     type="number"
                     step="0.1"
                     value={project.groundingResistanceOhm}
                     onChange={(e) => setProject({ ...project, groundingResistanceOhm: Number(e.target.value) || 0 })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 text-emerald-400 font-mono font-bold focus:outline-none"
+                    className={`w-full bg-slate-950 border rounded-xl px-2.5 py-1.5 font-mono font-bold focus:outline-none ${
+                      validation.isGroundingValid ? 'border-slate-800 text-emerald-400' : 'border-rose-600 text-rose-400'
+                    }`}
                   />
+                  {!validation.isGroundingValid && (
+                    <span className="text-[9px] text-rose-400 block mt-0.5">Máx. 20.0 &Omega; (RIC N°06).</span>
+                  )}
                 </div>
 
                 <div>
-                  <label className="text-slate-400 font-semibold block mb-0.5">Res. Aisl. (MΩ):</label>
+                  <div className="flex items-center justify-between mb-0.5">
+                    <label className="text-slate-400 font-semibold block">Res. Aisl. (M&Omega;):</label>
+                    {validation.isInsulationValid ? (
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                    ) : (
+                      <XCircle className="w-3.5 h-3.5 text-rose-400" />
+                    )}
+                  </div>
                   <input
                     type="number"
                     step="1"
                     value={project.insulationResistanceMohm}
                     onChange={(e) => setProject({ ...project, insulationResistanceMohm: Number(e.target.value) || 0 })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 text-emerald-400 font-mono font-bold focus:outline-none"
+                    className={`w-full bg-slate-950 border rounded-xl px-2.5 py-1.5 font-mono font-bold focus:outline-none ${
+                      validation.isInsulationValid ? 'border-slate-800 text-emerald-400' : 'border-rose-600 text-rose-400'
+                    }`}
                   />
+                  {!validation.isInsulationValid && (
+                    <span className="text-[9px] text-rose-400 block mt-0.5">Mín. 1.0 M&Omega; (RIC N°04).</span>
+                  )}
                 </div>
               </div>
             </div>
@@ -773,6 +1171,69 @@ Propietario: ${owner.name} (RUT: ${owner.rut}).
           </div>
         </div>
       </div>
+
+      {/* SEC Validation Modal */}
+      {showValidationModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-lg w-full space-y-4 shadow-2xl animate-in fade-in zoom-in-95">
+            <div className="flex items-start justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2 text-amber-400">
+                <ShieldAlert className="w-6 h-6" />
+                <div>
+                  <h3 className="text-base font-extrabold text-white">
+                    Validación de Datos para e-Declarador SEC
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Inconsistencias detectadas antes de la tramitación oficial
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowValidationModal(false)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-300 leading-relaxed">
+              La plataforma de la SEC exige que todos los datos del propietario, instalador y parámetros normativos RIC N°01 - N°10 coincidan con los formatos oficiales.
+            </p>
+
+            <div className="bg-slate-950 p-3 rounded-2xl border border-slate-800 space-y-2 max-h-52 overflow-y-auto">
+              <span className="text-[11px] font-bold text-amber-400 block">
+                Observaciones requeridas ({validation.errors.length}):
+              </span>
+              <ul className="space-y-1.5 text-xs text-slate-300">
+                {validation.errors.map((err, idx) => (
+                  <li key={idx} className="flex items-start gap-2 bg-slate-900/60 p-2 rounded-xl border border-slate-800">
+                    <XCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold text-amber-300 text-[10px] block">[{err.category}]</span>
+                      <span className="text-[11px] text-slate-200">{err.message}</span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
+              <button
+                onClick={handleForceExportJson}
+                className="px-3.5 py-2 text-xs font-semibold text-slate-400 hover:text-slate-200 bg-slate-800 hover:bg-slate-700 rounded-xl transition-all"
+              >
+                Exportar como Borrador
+              </button>
+              <button
+                onClick={() => setShowValidationModal(false)}
+                className="px-4 py-2 text-xs font-bold text-white bg-fuchsia-600 hover:bg-fuchsia-500 rounded-xl shadow transition-all"
+              >
+                Corregir Datos
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

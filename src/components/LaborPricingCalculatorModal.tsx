@@ -230,7 +230,7 @@ export const LaborPricingCalculatorModal: React.FC<LaborPricingCalculatorModalPr
                     <input
                       type="checkbox"
                       checked={includeTe1InLabor}
-                      onChange={(e) => setIncludeTe1InLabor(e.target.value)}
+                      onChange={(e) => setIncludeTe1InLabor(e.target.checked)}
                       className="rounded accent-fuchsia-600"
                     />
                     <span className="font-semibold">Trámite TE1 SEC e-Declarador:</span>

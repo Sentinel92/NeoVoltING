@@ -1,25 +1,15 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import { ContractorConfig, UserSession } from '../types';
 import { NeovoltLogo } from './NeovoltLogo';
 import { SignaturePad } from './SignaturePad';
 import {
-  UserCheck,
   Building,
   CreditCard,
   Upload,
   Check,
-  ShieldCheck,
   FileCheck,
   RefreshCw,
-  Cloud,
-  CloudUpload,
-  Download,
-  Smartphone,
-  Sparkles,
-  Award,
   GraduationCap,
-  Bell,
-  AlertTriangle,
   Camera,
 } from 'lucide-react';
 
@@ -41,31 +31,8 @@ export const InstallerProfileTab: React.FC<InstallerProfileTabProps> = ({
   user,
   setUser,
   onSaveToCloud,
-  onLoadFromCloud,
-  onInstallApp,
-  isCloudSyncing = false,
-  lastCloudSyncTime,
 }) => {
   const [savedSuccess, setSavedSuccess] = useState(false);
-  const [reminderDays, setReminderDays] = useState<number>(() => {
-    const saved = localStorage.getItem('neovolt_backup_reminder_days');
-    return saved ? parseInt(saved, 10) : 7;
-  });
-
-  const daysSinceLastBackup = useMemo(() => {
-    if (!lastCloudSyncTime) return 999;
-    const lastDate = new Date(lastCloudSyncTime);
-    const now = new Date();
-    const diffTime = Math.abs(now.getTime() - lastDate.getTime());
-    return Math.floor(diffTime / (1000 * 60 * 60 * 24));
-  }, [lastCloudSyncTime]);
-
-  const isBackupOverdue = reminderDays > 0 && daysSinceLastBackup >= reminderDays;
-
-  const handleReminderDaysChange = (days: number) => {
-    setReminderDays(days);
-    localStorage.setItem('neovolt_backup_reminder_days', days.toString());
-  };
 
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -103,153 +70,22 @@ export const InstallerProfileTab: React.FC<InstallerProfileTabProps> = ({
         <div>
           <div className="flex items-center gap-2 text-fuchsia-400 text-xs font-bold uppercase tracking-wider mb-1">
             <GraduationCap className="w-4 h-4 text-fuchsia-400" />
-            <span>Perfil Ingeniero en Electricidad y Automatización Industrial</span>
+            <span>Perfil Técnico e Instalador Autorizado SEC</span>
           </div>
           <h2 className="text-xl font-bold text-white flex items-center gap-2">
-            <span>Perfil Profesional del Ingeniero & Datos de Empresa</span>
+            <span>Perfil del Instalador, Datos de Cuenta y Firma</span>
           </h2>
           <p className="text-xs text-slate-400 mt-1">
-            Ficha profesional del Ingeniero en Electricidad y Automatización Industrial, número de licencia SEC, firma digital y respaldos en la nube.
+            Información del profesional eléctrico, número de licencia SEC, datos de transferencia bancaria y firma manuscrita digital.
           </p>
         </div>
 
         {savedSuccess && (
           <div className="bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-bold px-4 py-2 rounded-xl flex items-center gap-2 animate-fadeIn">
             <Check className="w-4 h-4 text-emerald-400" />
-            <span>¡Perfil guardado y respaldado en la nube!</span>
+            <span>¡Datos de Perfil Guardados Correctamente!</span>
           </div>
         )}
-      </div>
-
-      {/* Cloud Backup & Mobile PWA Installation Section */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Cloud Sync Card */}
-        <div className="bg-gradient-to-br from-slate-900 via-slate-900 to-indigo-950/40 border border-emerald-500/30 rounded-2xl p-5 shadow-lg space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 flex items-center justify-center">
-                <Cloud className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="text-sm font-bold text-white">Sincronización en la Nube con tu Correo</h3>
-                <p className="text-[11px] text-emerald-400 font-medium">Anclado a {user?.email || 'tu correo'}</p>
-              </div>
-            </div>
-            <span className="bg-emerald-500/20 text-emerald-300 text-[10px] font-bold px-2 py-0.5 rounded-full border border-emerald-500/30 flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-              <span>Nube Activa</span>
-            </span>
-          </div>
-
-          <p className="text-xs text-slate-300 leading-relaxed">
-            Toda tu información (clientes, levantamientos de proyectos, tableros, cubicación y cotizaciones) se guarda respaldada en la nube asociada a tu correo electrónico. Si desinstalas la app o cambias de celular, al ingresar con tu correo recuperarás el 100% de tus datos.
-          </p>
-
-          {lastCloudSyncTime && (
-            <div className="text-[11px] text-slate-400">
-              Último respaldo en la nube: <span className="text-slate-200 font-mono font-bold">{new Date(lastCloudSyncTime).toLocaleString('es-CL')}</span>
-            </div>
-          )}
-
-          {/* Periodic Cloud Backup Reminder Config */}
-          <div className="bg-slate-950 p-3.5 rounded-2xl border border-slate-800/80 space-y-2">
-            <div className="flex items-center justify-between gap-2">
-              <label className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
-                <Bell className="w-3.5 h-3.5 text-amber-400" />
-                <span>Recordatorio Periódico de Respaldo:</span>
-              </label>
-
-              <select
-                value={reminderDays}
-                onChange={(e) => handleReminderDaysChange(Number(e.target.value))}
-                className="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-amber-300 font-bold focus:outline-none focus:border-amber-500"
-              >
-                <option value={7}>Cada 7 días (Recomendado)</option>
-                <option value={14}>Cada 14 días</option>
-                <option value={30}>Cada 30 días</option>
-                <option value={0}>Desactivado</option>
-              </select>
-            </div>
-
-            {isBackupOverdue ? (
-              <div className="bg-rose-950/60 border border-rose-800/80 p-2.5 rounded-xl text-xs text-rose-300 flex items-center gap-2 font-medium">
-                <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
-                <span>
-                  ¡Atención! Han transcurrido <strong className="text-white">{daysSinceLastBackup} días</strong> desde tu último respaldo en la nube. Realiza un respaldo completo para proteger tus proyectos.
-                </span>
-              </div>
-            ) : reminderDays > 0 ? (
-              <p className="text-[11px] text-slate-400">
-                La app te alertará cuando pasen más de <strong className="text-slate-200">{reminderDays} días</strong> sin sincronizar tus proyectos con la nube.
-              </p>
-            ) : null}
-          </div>
-
-          <div className="flex items-center gap-3 pt-1">
-            {onSaveToCloud && (
-              <button
-                type="button"
-                onClick={onSaveToCloud}
-                disabled={isCloudSyncing}
-                className="flex-1 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs py-2.5 px-3 rounded-xl shadow transition-all flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50"
-              >
-                <CloudUpload className={`w-4 h-4 ${isCloudSyncing ? 'animate-bounce' : ''}`} />
-                <span>{isCloudSyncing ? 'Guardando...' : 'Respaldar en la Nube Ahora'}</span>
-              </button>
-            )}
-
-            {onLoadFromCloud && (
-              <button
-                type="button"
-                onClick={onLoadFromCloud}
-                className="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-bold text-xs py-2.5 px-3 rounded-xl transition-all flex items-center justify-center gap-1.5 active:scale-95"
-                title="Recuperar respaldo de proyectos y clientes desde la nube"
-              >
-                <Download className="w-4 h-4 text-fuchsia-400" />
-                <span>Restaurar Datos</span>
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Mobile PWA Installation Card */}
-        <div className="bg-gradient-to-br from-slate-900 via-slate-900 to-fuchsia-950/40 border border-fuchsia-500/30 rounded-2xl p-5 shadow-lg space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-xl bg-fuchsia-500/20 border border-fuchsia-500/40 text-fuchsia-400 flex items-center justify-center">
-                <Smartphone className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="text-sm font-bold text-white">Instalación en Smartphone / Tablet</h3>
-                <p className="text-[11px] text-fuchsia-400 font-medium">Aplicación Web Progresiva (PWA)</p>
-              </div>
-            </div>
-            <span className="bg-fuchsia-500/20 text-fuchsia-300 text-[10px] font-bold px-2 py-0.5 rounded-full border border-fuchsia-500/30">
-              Android & iOS
-            </span>
-          </div>
-
-          <p className="text-xs text-slate-300 leading-relaxed">
-            Instala NEOVOLT directamente en tu teléfono móvil para acceder desde el ícono en tu pantalla de inicio como una app nativa, rápida y optimizada para terreno.
-          </p>
-
-          <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 text-[11px] text-slate-400 space-y-1">
-            <div className="font-bold text-slate-200">📱 Pasos para instalar en tu teléfono:</div>
-            <div>• <strong className="text-fuchsia-300">Android (Chrome):</strong> Toca los 3 puntos arriba ➔ "Instalar aplicación" o "Agregar a pantalla principal".</div>
-            <div>• <strong className="text-fuchsia-300">iPhone (Safari):</strong> Toca el botón Compartir ➔ "Agregar a inicio".</div>
-          </div>
-
-          {onInstallApp && (
-            <button
-              type="button"
-              onClick={onInstallApp}
-              className="w-full bg-gradient-to-r from-fuchsia-600 to-indigo-600 hover:from-fuchsia-500 hover:to-indigo-500 text-white font-bold text-xs py-2.5 px-4 rounded-xl shadow transition-all flex items-center justify-center gap-2 active:scale-95"
-            >
-              <Smartphone className="w-4 h-4" />
-              <span>Instalar App en Pantalla de Inicio del Celular</span>
-            </button>
-          )}
-        </div>
       </div>
 
       <form onSubmit={handleSaveAll} className="space-y-6">
@@ -385,7 +221,7 @@ export const InstallerProfileTab: React.FC<InstallerProfileTabProps> = ({
                   <label className="block font-semibold text-slate-400 mb-1">Número de Licencia SEC *</label>
                   <input
                     type="text"
-                    required={contractor.isSecCertified !== false}
+                    required={Boolean(contractor.isSecCertified)}
                     value={contractor.secLicense}
                     onChange={(e) => setContractor({ ...contractor, secLicense: e.target.value })}
                     className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-emerald-400 font-mono font-bold focus:outline-none focus:border-fuchsia-500"

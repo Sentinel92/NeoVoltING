@@ -85,6 +85,10 @@ export function LoadCensusTab({
   const [newDevWatts, setNewDevWatts] = useState(150);
   const [newDevQty, setNewDevQty] = useState(1);
 
+  // --- Demanda Máxima / RIC N°02 State ---
+  const [empalmeCapacity, setEmpalmeCapacity] = useState<number>(25); // Amperes
+  const [isEmpalmeTrifasico, setIsEmpalmeTrifasico] = useState<boolean>(false);
+
   const [showAddHighModal, setShowAddHighModal] = useState(false);
   const [newHighName, setNewHighName] = useState('');
   const [newHighWatts, setNewHighWatts] = useState(2500);

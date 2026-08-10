@@ -104,6 +104,12 @@ const DEFAULT_SERVICE_TYPES: CustomServiceType[] = [
     description: 'Auditoría normativa RIC SEC, protocolo de tierras y trámite de declaración TE1.',
     isDefault: true,
   },
+  {
+    id: 'st_7',
+    name: 'Instalación de Cámaras (CCTV)',
+    description: 'Montaje de cámaras de seguridad, cableado de red o coaxial y configuración DVR/NVR.',
+    isDefault: true,
+  },
 ];
 
 // Presets for Scope Items when selecting service types
@@ -204,6 +210,32 @@ const DEFAULT_SCOPE_PRESETS: Record<string, ProjectScopeItem[]> = {
       category: 'MANO_DE_OBRA',
     },
   ],
+  'Instalación de Cámaras (CCTV)': [
+    {
+      id: 'cctv1',
+      description: 'Kit de 4 Cámaras IP / Analógicas HD con DVR/NVR y Disco Duro',
+      quantity: 1,
+      unitPrice: 185000,
+      unit: 'global',
+      category: 'MATERIALES',
+    },
+    {
+      id: 'cctv2',
+      description: 'Mano de obra: Instalación, cableado estructurado y configuración de red',
+      quantity: 1,
+      unitPrice: 140000,
+      unit: 'global',
+      category: 'MANO_DE_OBRA',
+    },
+    {
+      id: 'cctv3',
+      description: 'Materiales extra: Cajas de paso, tubería PVC conduit, baluns',
+      quantity: 1,
+      unitPrice: 45000,
+      unit: 'global',
+      category: 'MATERIALES',
+    },
+  ],
 };
 
 export const ProjectsManagerModule: React.FC<ProjectsManagerModuleProps> = ({
@@ -254,7 +286,7 @@ export const ProjectsManagerModule: React.FC<ProjectsManagerModuleProps> = ({
 
   // Modal State for New / Edit Project
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [activeModalTab, setActiveModalTab] = useState<'client_info' | 'attachments' | 'scope_quote'>('client_info');
+  const [activeModalTab, setActiveModalTab] = useState<'client_info' | 'attachments' | 'scope_quote' | 'history'>('client_info');
   const [editingProject, setEditingProject] = useState<ElectricalProject | null>(null);
 
   // Budget Mode State ('WITH_MATERIALS' vs 'WITHOUT_MATERIALS')
@@ -276,6 +308,39 @@ export const ProjectsManagerModule: React.FC<ProjectsManagerModuleProps> = ({
   const [galleryProject, setGalleryProject] = useState<ElectricalProject | null>(null);
   const pdfPrintRef = useRef<HTMLDivElement>(null);
 
+  const handleShareEmailQuote = (project: ElectricalProject) => {
+    const scopeSummary = project.scopeItems
+      .map(
+        (item) =>
+          `• ${item.description} (${item.quantity} ${item.unit || 'unid'}) - $${(
+            item.quantity * item.unitPrice
+          ).toLocaleString('es-CL')} CLP`
+      )
+      .join('\n');
+
+    const subject = encodeURIComponent(`Cotización de Proyecto Eléctrico: ${project.title}`);
+    const body = encodeURIComponent(`Estimado/a ${project.client.name},
+
+Junto con saludar, le adjunto el resumen de su cotización eléctrica:
+
+Código: ${project.code}
+Servicio: ${project.projectType}
+Dirección: ${project.client.address || 'N/A'}
+${project.isFaultDiagnosis ? `\nDiagnóstico Inicial:\n${project.faultDiagnosisDetails}\n` : ''}${project.isModification ? `\nModificaciones Solicitadas:\n${project.modificationDetails}\n` : ''}
+Resumen de Alcance y Trabajos:
+${scopeSummary || '• Trabajos de instalación y cubicación técnica.'}
+
+PRESUPUESTO TOTAL COTIZADO: $${project.totalPrice.toLocaleString('es-CL')} CLP
+
+Quedamos atentos a cualquier duda o consulta.
+
+Atentamente,
+${contractor.installerName}
+Licencia SEC: ${contractor.secLicense}`);
+
+    window.open(`mailto:${project.client.email || ''}?subject=${subject}&body=${body}`, '_blank');
+  };
+
   const handleShareWhatsAppQuote = (project: ElectricalProject) => {
     const scopeSummary = project.scopeItems
       .map(
@@ -293,6 +358,8 @@ export const ProjectsManagerModule: React.FC<ProjectsManagerModuleProps> = ({
       `📄 *Proyecto:* ${project.title}\n` +
       `🏢 *Cliente:* ${project.client.name}\n` +
       `📍 *Dirección:* ${project.client.address || 'Chile'}\n\n` +
+      (project.isFaultDiagnosis ? `⚠️ *Diagnóstico Inicial:*\n${project.faultDiagnosisDetails}\n\n` : '') +
+      (project.isModification ? `🛠️ *Modificaciones Solicitadas:*\n${project.modificationDetails}\n\n` : '') +
       `📋 *Resumen de Alcance y Trabajos:*\n${
         scopeSummary || '• Trabajos de instalación y cubicación técnica.'
       }\n\n` +
@@ -316,6 +383,10 @@ export const ProjectsManagerModule: React.FC<ProjectsManagerModuleProps> = ({
   const [projectStatus, setProjectStatus] = useState<'COTIZACION' | 'APROBADO' | 'EN_EJECUCION' | 'COMPLETADO' | 'CANCELADO'>('COTIZACION');
   const [projectDescription, setProjectDescription] = useState('');
   const [projectNotes, setProjectNotes] = useState('');
+  const [isFaultDiagnosis, setIsFaultDiagnosis] = useState(false);
+  const [faultDiagnosisDetails, setFaultDiagnosisDetails] = useState('');
+  const [isModification, setIsModification] = useState(false);
+  const [modificationDetails, setModificationDetails] = useState('');
   const [targetDeadline, setTargetDeadline] = useState('');
   const [includeTaxIVA, setIncludeTaxIVA] = useState(false);
 
@@ -394,6 +465,10 @@ export const ProjectsManagerModule: React.FC<ProjectsManagerModuleProps> = ({
     setProjectStatus('COTIZACION');
     setProjectDescription('');
     setProjectNotes('');
+    setIsFaultDiagnosis(false);
+    setFaultDiagnosisDetails('');
+    setIsModification(false);
+    setModificationDetails('');
     setTargetDeadline(new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0]);
     setIncludeTaxIVA(false);
     setAttachments([]);
@@ -446,6 +521,10 @@ export const ProjectsManagerModule: React.FC<ProjectsManagerModuleProps> = ({
     setProjectStatus(project.status);
     setProjectDescription(project.description);
     setProjectNotes(project.notes || '');
+    setIsFaultDiagnosis(project.isFaultDiagnosis || false);
+    setFaultDiagnosisDetails(project.faultDiagnosisDetails || '');
+    setIsModification(project.isModification || false);
+    setModificationDetails(project.modificationDetails || '');
     setTargetDeadline(project.targetDeadline || '');
     setIncludeTaxIVA(project.includeTaxIVA);
     setClientDetails({ ...project.client });
@@ -644,7 +723,8 @@ export const ProjectsManagerModule: React.FC<ProjectsManagerModuleProps> = ({
         materialsPriceOld: editingProject.materialsPrice,
         materialsPriceNew: totalMaterials,
         laborPriceOld: editingProject.laborPrice,
-        laborPriceNew: totalLabor
+        laborPriceNew: totalLabor,
+        scopeItemsOld: [...editingProject.scopeItems],
       };
       
       const history = editingProject.versionHistory ? [...editingProject.versionHistory, newVersion] : [newVersion];
@@ -657,6 +737,10 @@ export const ProjectsManagerModule: React.FC<ProjectsManagerModuleProps> = ({
         status: projectStatus,
         client: { ...clientDetails },
         description: projectDescription,
+        isFaultDiagnosis,
+        faultDiagnosisDetails,
+        isModification,
+        modificationDetails,
         attachments: [...attachments],
         scopeItems: [...finalScopeItems],
         materialsPrice: totalMaterials,
@@ -678,6 +762,10 @@ export const ProjectsManagerModule: React.FC<ProjectsManagerModuleProps> = ({
         status: projectStatus,
         client: { ...clientDetails },
         description: projectDescription,
+        isFaultDiagnosis,
+        faultDiagnosisDetails,
+        isModification,
+        modificationDetails,
         attachments: [...attachments],
         scopeItems: [...finalScopeItems],
         materialsPrice: totalMaterials,
@@ -929,6 +1017,20 @@ export const ProjectsManagerModule: React.FC<ProjectsManagerModuleProps> = ({
                     </p>
                   )}
 
+                  {project.isFaultDiagnosis && (
+                    <div className="bg-rose-950/20 border border-rose-900/50 p-2 rounded-lg mt-1">
+                      <span className="text-[10px] font-bold text-rose-400 block mb-0.5">⚠️ Requiere Diagnóstico</span>
+                      <p className="text-[10px] text-rose-200 line-clamp-2">{project.faultDiagnosisDetails || 'Diagnóstico general requerido.'}</p>
+                    </div>
+                  )}
+
+                  {project.isModification && (
+                    <div className="bg-emerald-950/20 border border-emerald-900/50 p-2 rounded-lg mt-1">
+                      <span className="text-[10px] font-bold text-emerald-400 block mb-0.5">🛠️ Modificaciones Solicitadas</span>
+                      <p className="text-[10px] text-emerald-200 line-clamp-2">{project.modificationDetails || 'Cambios o accesorios solicitados.'}</p>
+                    </div>
+                  )}
+
                   {/* Materials vs Labor Breakdown Badge */}
                   <div className="flex items-center justify-between gap-2 text-[10px] pt-1">
                     <span className="bg-slate-950 px-2 py-0.5 rounded-md border border-slate-800 text-slate-400">
@@ -958,14 +1060,23 @@ export const ProjectsManagerModule: React.FC<ProjectsManagerModuleProps> = ({
                   </span>
                 </div>
 
-                <div className="grid grid-cols-3 gap-1.5 text-[10px]">
+                <div className="grid grid-cols-4 gap-1.5 text-[10px]">
                   <button
                     onClick={() => handleShareWhatsAppQuote(project)}
                     className="bg-emerald-950/80 hover:bg-emerald-900 text-emerald-300 border border-emerald-800/60 font-bold py-1.5 px-1.5 rounded-xl transition-all flex items-center justify-center gap-1 shadow-sm"
                     title="Enviar resumen y PDF por WhatsApp"
                   >
                     <MessageSquare className="w-3 h-3 text-emerald-400" />
-                    <span>WhatsApp</span>
+                    <span className="hidden sm:inline">WhatsApp</span>
+                  </button>
+
+                  <button
+                    onClick={() => handleShareEmailQuote(project)}
+                    className="bg-blue-950/80 hover:bg-blue-900 text-blue-300 border border-blue-800/60 font-bold py-1.5 px-1.5 rounded-xl transition-all flex items-center justify-center gap-1 shadow-sm"
+                    title="Enviar resumen por Email"
+                  >
+                    <Mail className="w-3 h-3 text-blue-400" />
+                    <span className="hidden sm:inline">Email</span>
                   </button>
 
                   <button
@@ -974,7 +1085,7 @@ export const ProjectsManagerModule: React.FC<ProjectsManagerModuleProps> = ({
                     title="Exportar Cotización PDF"
                   >
                     <Printer className="w-3 h-3 text-fuchsia-400" />
-                    <span>PDF</span>
+                    <span className="hidden sm:inline">PDF</span>
                   </button>
 
                   <button
@@ -983,7 +1094,7 @@ export const ProjectsManagerModule: React.FC<ProjectsManagerModuleProps> = ({
                     title="Ver Galería de Fotos del Proyecto"
                   >
                     <Camera className="w-3 h-3 text-fuchsia-400" />
-                    <span>Fotos ({project.attachments?.length || 0})</span>
+                    <span className="hidden sm:inline">Fotos ({project.attachments?.length || 0})</span>
                   </button>
 
                   <button
@@ -1426,6 +1537,56 @@ export const ProjectsManagerModule: React.FC<ProjectsManagerModuleProps> = ({
                         className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-fuchsia-500"
                       ></textarea>
                     </div>
+
+                    {/* NEW: Fault Diagnosis Fields */}
+                    <div className="sm:col-span-2 space-y-2 mt-2">
+                      <label className="flex items-center gap-2 cursor-pointer group">
+                        <input
+                          type="checkbox"
+                          checked={isFaultDiagnosis}
+                          onChange={(e) => setIsFaultDiagnosis(e.target.checked)}
+                          className="w-4 h-4 rounded border-slate-700 bg-slate-950 text-fuchsia-600 focus:ring-fuchsia-500 cursor-pointer"
+                        />
+                        <span className="text-[11px] font-bold text-slate-300 group-hover:text-white transition-colors">
+                          Requiere Diagnóstico / Es por falla
+                        </span>
+                      </label>
+
+                      {isFaultDiagnosis && (
+                        <textarea
+                          value={faultDiagnosisDetails}
+                          onChange={(e) => setFaultDiagnosisDetails(e.target.value)}
+                          rows={2}
+                          placeholder="Ingresa el diagnóstico inicial (ej: 'Cortocircuito en enchufe de cocina', 'Diferencial salta recurrentemente')."
+                          className="w-full bg-slate-900 border border-slate-800 rounded-xl p-3 text-xs text-fuchsia-100 placeholder-slate-500 focus:outline-none focus:border-fuchsia-500"
+                        ></textarea>
+                      )}
+                    </div>
+
+                    {/* NEW: Modification/Changes Fields */}
+                    <div className="sm:col-span-2 space-y-2">
+                      <label className="flex items-center gap-2 cursor-pointer group">
+                        <input
+                          type="checkbox"
+                          checked={isModification}
+                          onChange={(e) => setIsModification(e.target.checked)}
+                          className="w-4 h-4 rounded border-slate-700 bg-slate-950 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                        />
+                        <span className="text-[11px] font-bold text-slate-300 group-hover:text-white transition-colors">
+                          Incluye Modificaciones / Cambios
+                        </span>
+                      </label>
+
+                      {isModification && (
+                        <textarea
+                          value={modificationDetails}
+                          onChange={(e) => setModificationDetails(e.target.value)}
+                          rows={2}
+                          placeholder="Detalla los cambios (ej: 'Cambiar 3 enchufes simples a dobles', 'Agregar lámpara en pasillo', 'Instalar 2 cámaras')."
+                          className="w-full bg-slate-900 border border-slate-800 rounded-xl p-3 text-xs text-emerald-100 placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                        ></textarea>
+                      )}
+                    </div>
                   </div>
                 </div>
               )}
@@ -1857,6 +2018,22 @@ export const ProjectsManagerModule: React.FC<ProjectsManagerModuleProps> = ({
                                   ${version.laborPriceOld.toLocaleString('es-CL')} {"->"} ${version.laborPriceNew.toLocaleString('es-CL')}
                                 </span>
                               </div>
+                              {version.scopeItemsOld && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (window.confirm('¿Estás seguro de revertir la cubicación a esta versión? Perderás los cambios actuales que no hayas guardado.')) {
+                                      setScopeItems([...version.scopeItemsOld!]);
+                                      setActiveModalTab('scope_quote');
+                                      showToast('Cubicación revertida correctamente. Revisa el calculador y guarda los cambios.');
+                                    }
+                                  }}
+                                  className="mt-2 w-full flex items-center justify-center gap-1 bg-fuchsia-600/20 hover:bg-fuchsia-600/40 text-fuchsia-300 border border-fuchsia-500/30 px-2 py-1.5 rounded-lg text-[10px] font-bold transition-colors"
+                                >
+                                  <RefreshCw className="w-3 h-3" />
+                                  Revertir a esta versión
+                                </button>
+                              )}
                             </div>
                           </div>
                         ))}
@@ -2018,9 +2195,12 @@ export const ProjectsManagerModule: React.FC<ProjectsManagerModuleProps> = ({
       {/* PROJECT PHOTO GALLERY MODAL */}
       {galleryProject && (
         <ProjectPhotoGallery
+          isOpen={true}
           project={galleryProject}
           onClose={() => setGalleryProject(null)}
-          onUpdateProjectAttachments={(projectId, updatedAttachments) => {
+          onUpdateProjectAttachments={(updatedAttachments) => {
+            if (!galleryProject) return;
+            const projectId = galleryProject.id;
             setProjects((prev) =>
               prev.map((p) => (p.id === projectId ? { ...p, attachments: updatedAttachments } : p))
             );

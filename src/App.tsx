@@ -1188,6 +1188,7 @@ export default function App() {
               {activeTab === 'te1' && (
                 <Te1DeclarationTab
                   user={user}
+                  contractor={contractor}
                   rooms={rooms}
                   highAppliances={highAppliances}
                   feederLength={feederLength}
