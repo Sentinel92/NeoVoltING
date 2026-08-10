@@ -13,6 +13,7 @@ import {
 } from 'firebase/firestore';
 import { getFunctions } from 'firebase/functions';
 
+// Configuración Firebase Vercel OK
 // Firebase configuration reading strictly from import.meta.env.VITE_FIREBASE_*
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyDemoNeovoltSecApiKey12345",
