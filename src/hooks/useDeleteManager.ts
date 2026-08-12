@@ -34,9 +34,11 @@ export function useDeleteManager<T extends { id: string | number }>(
     setDeleteError(null);
 
     try {
+      let updatedLength = 0;
       // 1. Update Local React State
       setItemsState((prevItems) => {
         const updated = prevItems.filter((i) => i.id !== itemToDelete.id);
+        updatedLength = updated.length;
 
         // 2. Persist to localStorage if key provided
         if (options.storageKey) {
@@ -47,21 +49,21 @@ export function useDeleteManager<T extends { id: string | number }>(
           }
         }
 
-        // 3. Trigger Firebase Sync if userEmail provided
-        if (options.userEmail) {
-          saveUserDataToFirebase(options.userEmail, {
-            type: 'DELETE_ITEM',
-            storageKey: options.storageKey,
-            deletedId: itemToDelete.id,
-            remainingCount: updated.length,
-            timestamp: new Date().toISOString(),
-          }).catch((err) => {
-            console.warn('[useDeleteManager] Firebase sync warn:', err);
-          });
-        }
-
         return updated;
       });
+
+      // 3. Trigger Firebase Sync outside of state updater
+      if (options.userEmail) {
+        saveUserDataToFirebase(options.userEmail, {
+          type: 'DELETE_ITEM',
+          storageKey: options.storageKey,
+          deletedId: itemToDelete.id,
+          remainingCount: updatedLength,
+          timestamp: new Date().toISOString(),
+        }).catch((err) => {
+          console.warn('[useDeleteManager] Firebase sync warn:', err);
+        });
+      }
 
       if (options.onSuccess) {
         options.onSuccess(itemToDelete);

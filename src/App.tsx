@@ -173,6 +173,10 @@ export default function App() {
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [showPwaInstallGuide, setShowPwaInstallGuide] = useState(false);
 
+  // Sync Guard Refs to prevent infinite loop of Firestore writes & reads
+  const isUpdatingFromRemoteRef = useRef(false);
+  const lastSavedHashRef = useRef('');
+
   // Setup Network Listeners & Auto Sync on Recovery
   useEffect(() => {
     const cleanup = setupNetworkAndSyncListeners(
@@ -761,6 +765,7 @@ export default function App() {
     const payload = {
       user,
       clients,
+      projects,
       rooms,
       highAppliances,
       feederLength,
@@ -772,6 +777,21 @@ export default function App() {
       workReport,
       savedAt: now,
     };
+
+    // Update last saved payload hash to prevent immediate duplicate auto-saving
+    lastSavedHashRef.current = JSON.stringify({
+      projects,
+      clients,
+      rooms,
+      highAppliances,
+      feederLength,
+      isThreePhase,
+      feederWireSection,
+      budgetItems,
+      customer,
+      contractor,
+      workReport,
+    });
 
     try {
       if (!navigator.onLine) {
@@ -865,7 +885,9 @@ export default function App() {
       // 1. Prioritize Firebase Firestore
       const fbData = await loadUserDataFromFirebase(user.email);
       if (fbData) {
+        isUpdatingFromRemoteRef.current = true;
         if (fbData.clients) setClients(fbData.clients);
+        if (fbData.projects) setProjects(fbData.projects);
         if (fbData.rooms) setRooms(fbData.rooms);
         if (fbData.highAppliances) setHighAppliances(fbData.highAppliances);
         if (fbData.budgetItems) setBudgetItems(fbData.budgetItems);
@@ -878,6 +900,20 @@ export default function App() {
         const now = new Date().toISOString();
         setLastCloudSyncTime(now);
         localStorage.setItem('neovolt_last_cloud_sync', now);
+
+        lastSavedHashRef.current = JSON.stringify({
+          projects: fbData.projects || projects,
+          clients: fbData.clients || clients,
+          rooms: fbData.rooms || rooms,
+          highAppliances: fbData.highAppliances || highAppliances,
+          feederLength: fbData.feederLength || feederLength,
+          isThreePhase: fbData.isThreePhase !== undefined ? fbData.isThreePhase : isThreePhase,
+          feederWireSection: fbData.feederWireSection || feederWireSection,
+          budgetItems: fbData.budgetItems || budgetItems,
+          customer: fbData.customer || customer,
+          contractor: fbData.contractor || contractor,
+          workReport: fbData.workReport || workReport,
+        });
         return;
       }
 
@@ -886,7 +922,9 @@ export default function App() {
       const result = await res.json();
       if (result.found && result.data) {
         const d = result.data;
+        isUpdatingFromRemoteRef.current = true;
         if (d.clients) setClients(d.clients);
+        if (d.projects) setProjects(d.projects);
         if (d.rooms) setRooms(d.rooms);
         if (d.highAppliances) setHighAppliances(d.highAppliances);
         if (d.budgetItems) setBudgetItems(d.budgetItems);
@@ -920,6 +958,7 @@ export default function App() {
 
     const unsubscribe = subscribeToUserDataRealtime(user.email, (fbData, isFromOtherDevice) => {
       if (isFromOtherDevice && fbData) {
+        isUpdatingFromRemoteRef.current = true;
         if (fbData.clients) setClients(fbData.clients);
         if (fbData.projects) setProjects(fbData.projects);
         if (fbData.rooms) setRooms(fbData.rooms);
@@ -934,6 +973,20 @@ export default function App() {
         const now = new Date().toISOString();
         setLastCloudSyncTime(now);
         localStorage.setItem('neovolt_last_cloud_sync', now);
+
+        lastSavedHashRef.current = JSON.stringify({
+          projects: fbData.projects || projects,
+          clients: fbData.clients || clients,
+          rooms: fbData.rooms || rooms,
+          highAppliances: fbData.highAppliances || highAppliances,
+          feederLength: fbData.feederLength || feederLength,
+          isThreePhase: fbData.isThreePhase !== undefined ? fbData.isThreePhase : isThreePhase,
+          feederWireSection: fbData.feederWireSection || feederWireSection,
+          budgetItems: fbData.budgetItems || budgetItems,
+          customer: fbData.customer || customer,
+          contractor: fbData.contractor || contractor,
+          workReport: fbData.workReport || workReport,
+        });
       }
     });
 
@@ -951,9 +1004,36 @@ export default function App() {
       return;
     }
 
+    // Skip auto-save if state was just hydrated from cloud
+    if (isUpdatingFromRemoteRef.current) {
+      isUpdatingFromRemoteRef.current = false;
+      return;
+    }
+
+    const currentHash = JSON.stringify({
+      projects,
+      clients,
+      rooms,
+      highAppliances,
+      feederLength,
+      isThreePhase,
+      feederWireSection,
+      budgetItems,
+      customer,
+      contractor,
+      workReport,
+    });
+
+    // Skip auto-save if data is identical to the last saved state
+    if (currentHash === lastSavedHashRef.current) {
+      return;
+    }
+
+    // Debounce save operation by 3000ms
     const timer = setTimeout(() => {
+      lastSavedHashRef.current = currentHash;
       handleSaveToCloud(false);
-    }, 3500);
+    }, 3000);
 
     return () => clearTimeout(timer);
   }, [

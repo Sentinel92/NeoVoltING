@@ -74,71 +74,91 @@ export function removeFromSyncQueue(id: string) {
   savePendingSyncQueue(queue);
 }
 
+let isFlushingQueue = false;
+
 /**
  * Process all items in the pending queue by pushing to Firebase and Cloud Server API
  */
 export async function flushOfflineSyncQueue(
   onProgress?: (syncedCount: number, totalCount: number) => void
 ): Promise<{ success: boolean; syncedCount: number; errorsCount: number }> {
-  const queue = getPendingSyncQueue();
-  if (queue.length === 0) {
+  if (isFlushingQueue) {
     return { success: true, syncedCount: 0, errorsCount: 0 };
   }
 
-  let syncedCount = 0;
-  let errorsCount = 0;
-  const remainingItems: PendingSyncItem[] = [];
-
-  for (let i = 0; i < queue.length; i++) {
-    const item = queue[i];
-    let firebaseSuccess = false;
-    let apiSuccess = false;
-
-    // 1. Save to Firebase Firestore
-    try {
-      const fbResult = await saveUserDataToFirebase(item.email, item.payload);
-      if (fbResult.success) {
-        firebaseSuccess = true;
-      }
-    } catch (err) {
-      console.warn('Fallo guardando item en Firebase during queue flush:', err);
-    }
-
-    // 2. Save to Server Cloud API endpoint
-    try {
-      const res = await fetch('/api/cloud-sync/save', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: item.email, data: item.payload }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        apiSuccess = true;
-      }
-    } catch (err) {
-      console.warn('Fallo enviando item al servidor durante flush:', err);
-    }
-
-    if (firebaseSuccess || apiSuccess) {
-      syncedCount++;
-    } else {
-      errorsCount++;
-      remainingItems.push(item);
-    }
-
-    if (onProgress) {
-      onProgress(i + 1, queue.length);
-    }
+  const rawQueue = getPendingSyncQueue();
+  if (rawQueue.length === 0) {
+    return { success: true, syncedCount: 0, errorsCount: 0 };
   }
 
-  savePendingSyncQueue(remainingItems);
+  isFlushingQueue = true;
 
-  if (syncedCount > 0) {
-    const now = new Date().toISOString();
-    localStorage.setItem('neovolt_last_cloud_sync', now);
+  try {
+    // Deduplicate queue items per email & action so we only sync the latest payload per user
+    const deduplicatedMap = new Map<string, PendingSyncItem>();
+    for (const item of rawQueue) {
+      const key = `${item.email}_${item.action}`;
+      deduplicatedMap.set(key, item);
+    }
+    const queue = Array.from(deduplicatedMap.values());
+
+    let syncedCount = 0;
+    let errorsCount = 0;
+    const remainingItems: PendingSyncItem[] = [];
+
+    for (let i = 0; i < queue.length; i++) {
+      const item = queue[i];
+      let firebaseSuccess = false;
+      let apiSuccess = false;
+
+      // 1. Save to Firebase Firestore
+      try {
+        const fbResult = await saveUserDataToFirebase(item.email, item.payload);
+        if (fbResult.success) {
+          firebaseSuccess = true;
+        }
+      } catch (err) {
+        console.warn('Fallo guardando item en Firebase during queue flush:', err);
+      }
+
+      // 2. Save to Server Cloud API endpoint
+      try {
+        const res = await fetch('/api/cloud-sync/save', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: item.email, data: item.payload }),
+        });
+        const data = await res.json();
+        if (data.success) {
+          apiSuccess = true;
+        }
+      } catch (err) {
+        console.warn('Fallo enviando item al servidor durante flush:', err);
+      }
+
+      if (firebaseSuccess || apiSuccess) {
+        syncedCount++;
+      } else {
+        errorsCount++;
+        remainingItems.push(item);
+      }
+
+      if (onProgress) {
+        onProgress(i + 1, queue.length);
+      }
+    }
+
+    savePendingSyncQueue(remainingItems);
+
+    if (syncedCount > 0) {
+      const now = new Date().toISOString();
+      localStorage.setItem('neovolt_last_cloud_sync', now);
+    }
+
+    return { success: errorsCount === 0, syncedCount, errorsCount };
+  } finally {
+    isFlushingQueue = false;
   }
-
-  return { success: errorsCount === 0, syncedCount, errorsCount };
 }
 
 /**

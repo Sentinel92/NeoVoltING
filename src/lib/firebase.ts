@@ -61,32 +61,85 @@ try {
 
 export { app, db, functions, isOfflinePersistenceEnabled };
 
+// Coalescing map & active write status per user email to prevent write stream exhaustion
+const CURRENT_SESSION_ID = 'session_' + Math.random().toString(36).substring(2, 9) + '_' + Date.now();
+const activeWritePromises = new Map<string, Promise<{ success: boolean; isOffline: boolean }>>();
+const pendingWritePayloads = new Map<string, { payload: any; resolvers: Array<(res: { success: boolean; isOffline: boolean }) => void> }>();
+
 /**
- * Sync user application payload to Firebase Firestore with automatic offline caching
+ * Sync user application payload to Firebase Firestore with automatic offline caching & write coalescing
  */
 export async function saveUserDataToFirebase(userEmail: string, payload: any): Promise<{ success: boolean; isOffline: boolean }> {
   if (!userEmail) return { success: false, isOffline: true };
   const sanitizedEmail = userEmail.trim().toLowerCase().replace(/[^a-zA-Z0-9_.-]/g, '_');
-  
-  if (db) {
+
+  if (!db) {
+    return { success: false, isOffline: !navigator.onLine };
+  }
+
+  // If a write is currently in progress for this email, coalesce this request
+  if (activeWritePromises.has(sanitizedEmail)) {
+    return new Promise((resolve) => {
+      const existing = pendingWritePayloads.get(sanitizedEmail);
+      if (existing) {
+        existing.payload = payload; // Overwrite with latest state
+        existing.resolvers.push(resolve);
+      } else {
+        pendingWritePayloads.set(sanitizedEmail, {
+          payload,
+          resolvers: [resolve],
+        });
+      }
+    });
+  }
+
+  // Execute the write operation
+  const executeWrite = async (currentPayload: any): Promise<{ success: boolean; isOffline: boolean }> => {
     try {
-      const docRef = doc(db, 'neovolt_user_backups', sanitizedEmail);
+      const docRef = doc(db!, 'neovolt_user_backups', sanitizedEmail);
       await setDoc(
         docRef,
         {
           email: userEmail,
           updatedAt: new Date().toISOString(),
           serverTimestamp: serverTimestamp(),
-          payload: payload,
+          writerSessionId: CURRENT_SESSION_ID,
+          payload: currentPayload,
         },
         { merge: true }
       );
       return { success: true, isOffline: !navigator.onLine };
-    } catch (err) {
-      console.warn('[Firebase] Error al guardar en Firestore (se mantendrá en cola offline local):', err);
+    } catch (err: any) {
+      const errMessage = err?.message || String(err);
+      if (errMessage.includes('resource-exhausted') || errMessage.includes('Write stream exhausted')) {
+        console.warn('[Firebase] Cola de escrituras en Firestore agotada. Se mantiene respaldo local correctamente.');
+      } else {
+        console.warn('[Firebase] Error al guardar en Firestore (respaldado localmente):', err);
+      }
+      return { success: false, isOffline: !navigator.onLine };
     }
-  }
-  return { success: false, isOffline: !navigator.onLine };
+  };
+
+  const currentWritePromise = (async () => {
+    const result = await executeWrite(payload);
+
+    // After current write finishes, check if newer payloads arrived while writing
+    activeWritePromises.delete(sanitizedEmail);
+
+    if (pendingWritePayloads.has(sanitizedEmail)) {
+      const pending = pendingWritePayloads.get(sanitizedEmail)!;
+      pendingWritePayloads.delete(sanitizedEmail);
+
+      // Perform one single follow-up save with the latest payload
+      const followUpResult = await saveUserDataToFirebase(userEmail, pending.payload);
+      pending.resolvers.forEach((res) => res(followUpResult));
+    }
+
+    return result;
+  })();
+
+  activeWritePromises.set(sanitizedEmail, currentWritePromise);
+  return currentWritePromise;
 }
 
 /**
@@ -123,11 +176,19 @@ export function subscribeToUserDataRealtime(
     const unsubscribe = onSnapshot(
       docRef,
       (snapshot) => {
+        // Ignore uncommitted local writes
+        if (snapshot.metadata.hasPendingWrites) {
+          return;
+        }
         if (snapshot.exists()) {
           const data = snapshot.data();
           if (data && data.payload) {
-            const isFromOtherDevice = !snapshot.metadata.hasPendingWrites;
-            onUpdate(data.payload, isFromOtherDevice);
+            // Ignore writes coming from this exact browser session
+            if (data.writerSessionId === CURRENT_SESSION_ID) {
+              return;
+            }
+            // Truly from another session or device
+            onUpdate(data.payload, true);
           }
         }
       },
