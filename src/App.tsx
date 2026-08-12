@@ -30,6 +30,8 @@ import { AiDiagnosticConsultantTab } from './components/AiDiagnosticConsultantTa
 import { Te1DeclarationTab } from './components/Te1DeclarationTab';
 import { ProjectsManagerModule } from './components/ProjectsManagerModule';
 import { DashboardModule } from './components/DashboardModule';
+import { ToolsModule } from './components/ToolsModule';
+import { MobileDrawer } from './components/MobileDrawer';
 import { TabSkeletonScreen } from './components/TabSkeletonScreen';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -50,12 +52,99 @@ import {
   UserCheck, 
   Smartphone, 
   X, 
-  FolderPlus,
+  FolderPlus, ChevronRight, Home,
   Wifi,
   WifiOff,
   RefreshCw,
   Check
 } from 'lucide-react';
+
+export interface NavItemConfig {
+  label: string;
+  category?: string;
+  componentName: string;
+}
+
+export const navConfig: Record<string, NavItemConfig> = {
+  dashboard: { label: 'Dashboard KPI', category: 'General', componentName: 'DashboardModule' },
+  projects: { label: 'Proyectos & Solicitudes', category: 'Gestión', componentName: 'ProjectsManagerModule' },
+  census: { label: 'Levantamiento (Censo)', category: 'Estudio de Carga', componentName: 'LoadCensusTab' },
+  crm: { label: 'Clientes (CRM)', category: 'Gestión', componentName: 'ClientsDatabaseTab' },
+  profile: { label: 'Perfil Técnico', category: 'Ajustes', componentName: 'InstallerProfileTab' },
+  diagnostic: { label: 'Consultor IA Fallas', category: 'Herramientas IA', componentName: 'AiDiagnosticConsultantTab' },
+  assembler: { label: 'Armado Tablero', category: 'Diseño Técnico', componentName: 'BoardAssemblerTab' },
+  singleline: { label: 'Diagrama Unilineal', category: 'Diseño Técnico', componentName: 'SingleLineDiagramTab' },
+  physical: { label: 'Tablero 2D Físico', category: 'Simulador 2D', componentName: 'ProfessionalBoardGeneratorTab' },
+  quote: { label: 'Cotización & Contrato', category: 'Comercial', componentName: 'CotizadorTab' },
+  report: { label: 'Informe Obra AI', category: 'Reportes', componentName: 'WorkReportTab' },
+  catalog: { label: 'Catálogo de Materiales', category: 'Insumos', componentName: 'MaterialsCatalogTab' },
+  tools: { label: 'Herramientas SEC / RIC', category: 'Calculadoras', componentName: 'ToolsModule' },
+  norms: { label: 'Norma RIC SEC', category: 'Reglamentación', componentName: 'RicNormsTab' },
+  te1: { label: 'Declaración TE1 SEC', category: 'Trámites', componentName: 'Te1DeclarationTab' },
+};
+
+const TAB_LABELS: Record<string, string> = {
+  "dashboard": "Dashboard KPI",
+  "projects": "Proyectos & Solicitudes",
+  "tools": "Herramientas SEC / RIC",
+  "census": "Levantamiento (Censo)",
+  "crm": "Clientes (CRM)",
+  "profile": "Perfil Técnico",
+  "diagnostic": "Consultor IA Fallas",
+  "assembler": "Armado Tablero",
+  "singleline": "Diagrama Unilineal",
+  "physical": "Tablero 2D Físico",
+  "quote": "Cotización & Contrato",
+  "report": "Informe Obra AI",
+  "catalog": "Catálogo",
+  "norms": "Norma RIC SEC",
+  "te1": "Declaración TE1 SEC",
+};
+
+interface BreadcrumbProps {
+  activeTab: string;
+  onNavigateToTab: (tab: string) => void;
+}
+
+const Breadcrumb: React.FC<BreadcrumbProps> = ({ activeTab, onNavigateToTab }) => {
+  const item = navConfig[activeTab] || {
+    label: TAB_LABELS[activeTab] || activeTab,
+    category: 'Sección',
+    componentName: 'Component',
+  };
+
+  return (
+    <nav aria-label="Breadcrumb" className="bg-slate-900/90 border-b border-slate-800/80 px-4 sm:px-6 py-2 print:hidden backdrop-blur-sm shadow-inner">
+      <div className="max-w-7xl mx-auto flex items-center text-xs text-slate-400 font-medium overflow-x-auto whitespace-nowrap scrollbar-none gap-1.5">
+        <button
+          onClick={() => onNavigateToTab('dashboard')}
+          className="flex items-center gap-1.5 text-slate-400 hover:text-white transition-colors group shrink-0"
+        >
+          <Home className="w-3.5 h-3.5 text-slate-500 group-hover:text-fuchsia-400 transition-colors" />
+          <span>Inicio</span>
+        </button>
+
+        <ChevronRight className="w-3.5 h-3.5 text-slate-600 shrink-0" />
+
+        <span className="text-slate-500 shrink-0">Plataforma Neovolt</span>
+
+        {item.category && (
+          <>
+            <ChevronRight className="w-3.5 h-3.5 text-slate-600 shrink-0" />
+            <span className="text-slate-400 shrink-0">{item.category}</span>
+          </>
+        )}
+
+        <ChevronRight className="w-3.5 h-3.5 text-slate-600 shrink-0" />
+
+        <div className="flex items-center gap-1.5 shrink-0 bg-fuchsia-500/10 border border-fuchsia-500/30 text-fuchsia-300 px-2.5 py-0.5 rounded-lg font-bold text-[11px]">
+          <Zap className="w-3 h-3 text-fuchsia-400" />
+          <span>{item.label}</span>
+        </div>
+      </div>
+    </nav>
+  );
+};
 
 export default function App() {
   // User Authentication State
@@ -69,6 +158,7 @@ export default function App() {
   });
 
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('diagnostic');
 
   // Cloud Sync, Firebase & Network Persistence State
@@ -378,6 +468,14 @@ export default function App() {
 
   useEffect(() => {
     localStorage.setItem('neovolt_projects', JSON.stringify(projects));
+
+    // Daily backup
+    const today = new Date().toISOString().split('T')[0];
+    const lastBackupDate = localStorage.getItem('neovolt_autosave_date');
+    if (lastBackupDate !== today) {
+      localStorage.setItem('neovolt_autosave_daily', JSON.stringify(projects));
+      localStorage.setItem('neovolt_autosave_date', today);
+    }
   }, [projects]);
 
   const [budgetHistory, setBudgetHistory] = useState<BudgetHistoryRecord[]>(() => {
@@ -920,6 +1018,7 @@ export default function App() {
         user={user}
         onOpenLogin={() => setIsLoginModalOpen(true)}
         onLogout={handleLogout}
+        onOpenDrawer={() => setIsDrawerOpen(true)}
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         customLogoUrl={contractor.customLogoUrl}
@@ -932,6 +1031,17 @@ export default function App() {
         isOnline={isOnline}
         pendingQueueCount={pendingQueueCount}
         onSyncNow={handleManualSync}
+      />
+
+      {/* Breadcrumb Navigation Indicator */}
+      <Breadcrumb activeTab={activeTab} onNavigateToTab={setActiveTab} />
+
+      <MobileDrawer 
+        isOpen={isDrawerOpen}
+        onClose={() => setIsDrawerOpen(false)}
+        user={user}
+        onLogout={handleLogout}
+        setActiveTab={setActiveTab}
       />
 
       {/* Sync Status Toast Notification (Floating, Non-blocking) */}
@@ -1040,232 +1150,225 @@ export default function App() {
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.2, ease: 'easeOut' }}
           >
-              {activeTab === 'dashboard' && (
-                <DashboardModule
-                  projects={projects}
-                  clients={clients}
-                  budgetHistory={budgetHistory}
-                  onRevertBudgetHistory={handleRevertBudgetHistory}
-                  onNavigateToTab={setActiveTab}
-                  onSelectProjectForQuote={handleSelectProjectForQuote}
-                  rooms={rooms}
-                  highAppliances={highAppliances}
-                />
-              )}
+            {(() => {
+              switch (activeTab) {
+                case 'physical':
+                case 'tablero_2d':
+                case '7':
+                  return <ProfessionalBoardGeneratorTab />;
 
-              {activeTab === 'projects' && (
-                <ProjectsManagerModule
-                  projects={projects}
-                  setProjects={setProjects}
-                  clients={clients}
-                  setClients={setClients}
-                  contractor={contractor}
-                  onTransferToGlobalQuote={handleTransferProjectToQuote}
-                  onNavigateToTab={setActiveTab}
-                  initialSelectedClientId={selectedProjectClientId}
-                />
-              )}
+                case 'dashboard':
+                  return (
+                    <DashboardModule
+                      projects={projects}
+                      clients={clients}
+                      budgetHistory={budgetHistory}
+                      onRevertBudgetHistory={handleRevertBudgetHistory}
+                      onNavigateToTab={setActiveTab}
+                      onSelectProjectForQuote={handleSelectProjectForQuote}
+                      rooms={rooms}
+                      highAppliances={highAppliances}
+                      onUpdateProject={(updatedProj) => {
+                        setProjects(prev => prev.map(p => p.id === updatedProj.id ? updatedProj : p));
+                      }}
+                    />
+                  );
 
-              {isCensusTab && (
-                <LoadCensusTab
-                  rooms={rooms}
-                  highAppliances={highAppliances}
-                  setRooms={setRooms}
-                  setHighAppliances={setHighAppliances}
-                  onTransferToQuote={(newItems) => {
-                    setBudgetItems((prev) => [...prev, ...newItems]);
-                    setActiveTab('quote');
-                  }}
-                  onNavigateToTab={setActiveTab}
-                />
-              )}
+                case 'projects':
+                case '0':
+                  return (
+                    <ProjectsManagerModule
+                      projects={projects}
+                      setProjects={setProjects}
+                      clients={clients}
+                      setClients={setClients}
+                      contractor={contractor}
+                      onTransferToGlobalQuote={handleTransferProjectToQuote}
+                      onNavigateToTab={setActiveTab}
+                      initialSelectedClientId={selectedProjectClientId}
+                    />
+                  );
 
-              {isCrmTab && (
-                <ClientsDatabaseTab
-                  clients={clients}
-                  setClients={setClients}
-                  onSelectClientForQuote={handleSelectClientForQuote}
-                  onSelectClientForReport={handleSelectClientForReport}
-                  onSelectClientForProject={handleSelectClientForProject}
-                />
-              )}
+                case 'census':
+                case 'levantamiento':
+                case '1':
+                  return (
+                    <LoadCensusTab
+                      rooms={rooms}
+                      highAppliances={highAppliances}
+                      setRooms={setRooms}
+                      setHighAppliances={setHighAppliances}
+                      onTransferToQuote={(newItems) => {
+                        setBudgetItems((prev) => [...prev, ...newItems]);
+                        setActiveTab('quote');
+                      }}
+                      onNavigateToTab={setActiveTab}
+                    />
+                  );
 
-              {activeTab === 'profile' && (
-                <InstallerProfileTab
-                  contractor={contractor}
-                  setContractor={setContractor}
-                  user={user}
-                  setUser={setUser}
-                  onSaveToCloud={handleSaveToCloud}
-                  onLoadFromCloud={handleLoadFromCloud}
-                  onInstallApp={handleInstallApp}
-                  isCloudSyncing={isCloudSyncing}
-                  lastCloudSyncTime={lastCloudSyncTime}
-                />
-              )}
+                case 'crm':
+                case 'clients':
+                case 'clients_database':
+                case '2':
+                  return (
+                    <ClientsDatabaseTab
+                      clients={clients}
+                      setClients={setClients}
+                      onSelectClientForQuote={handleSelectClientForQuote}
+                      onSelectClientForReport={handleSelectClientForReport}
+                      onSelectClientForProject={handleSelectClientForProject}
+                    />
+                  );
 
-              {isDiagnosticTab && (
-                <AiDiagnosticConsultantTab
-                  isSecCertified={contractor.isSecCertified}
-                  currentUser={user}
-                  onUpdateUserSession={setUser}
-                />
-              )}
+                case 'profile':
+                case '3':
+                  return (
+                    <InstallerProfileTab
+                      contractor={contractor}
+                      setContractor={setContractor}
+                      user={user}
+                      setUser={setUser}
+                      onSaveToCloud={handleSaveToCloud}
+                      onLoadFromCloud={handleLoadFromCloud}
+                      onInstallApp={handleInstallApp}
+                      isCloudSyncing={isCloudSyncing}
+                      lastCloudSyncTime={lastCloudSyncTime}
+                    />
+                  );
 
-              {isAssemblerTab && (
-                <BoardAssemblerTab
-                  rooms={rooms}
-                  highAppliances={highAppliances}
-                  feederLength={feederLength}
-                  setFeederLength={setFeederLength}
-                  isThreePhase={isThreePhase}
-                  setIsThreePhase={setIsThreePhase}
-                  feederWireSection={feederWireSection}
-                  setFeederWireSection={setFeederWireSection}
-                  onImportMaterialsToQuote={handleImportMaterialsToQuote}
-                />
-              )}
+                case 'diagnostic':
+                case 'ai_consultant':
+                case '4':
+                  return (
+                    <AiDiagnosticConsultantTab
+                      isSecCertified={contractor.isSecCertified}
+                      currentUser={user}
+                      onUpdateUserSession={setUser}
+                    />
+                  );
 
-              {isSingleLineTab && (
-                <SingleLineDiagramTab
-                  rooms={rooms}
-                  highAppliances={highAppliances}
-                  feederLength={feederLength}
-                  setFeederLength={setFeederLength}
-                  isThreePhase={isThreePhase}
-                  feederWireSection={feederWireSection}
-                  setFeederWireSection={setFeederWireSection}
-                  customProtectionSpecs={customProtectionSpecs}
-                  onUpdateProtectionSpecs={(updated) => {
-                    setCustomProtectionSpecs(updated);
-                    handleSyncProtectionsToBudget(updated);
-                  }}
-                  onSyncToBudget={(specs) => {
-                    handleSyncProtectionsToBudget(specs || customProtectionSpecs);
-                  }}
-                  contractor={contractor}
-                  customer={customer}
-                />
-              )}
+                case 'assembler':
+                case 'board_assembler':
+                case '5':
+                  return (
+                    <BoardAssemblerTab
+                      rooms={rooms}
+                      highAppliances={highAppliances}
+                      feederLength={feederLength}
+                      setFeederLength={setFeederLength}
+                      isThreePhase={isThreePhase}
+                      setIsThreePhase={setIsThreePhase}
+                      feederWireSection={feederWireSection}
+                      setFeederWireSection={setFeederWireSection}
+                      onImportMaterialsToQuote={handleImportMaterialsToQuote}
+                    />
+                  );
 
-              {activeTab === 'physical' && (
-                <ProfessionalBoardGeneratorTab />
-              )}
+                case 'singleline':
+                case 'diagram':
+                case '6':
+                  return (
+                    <SingleLineDiagramTab
+                      rooms={rooms}
+                      highAppliances={highAppliances}
+                      feederLength={feederLength}
+                      setFeederLength={setFeederLength}
+                      isThreePhase={isThreePhase}
+                      feederWireSection={feederWireSection}
+                      setFeederWireSection={setFeederWireSection}
+                      customProtectionSpecs={customProtectionSpecs}
+                      onUpdateProtectionSpecs={(updated) => {
+                        setCustomProtectionSpecs(updated);
+                        handleSyncProtectionsToBudget(updated);
+                      }}
+                      onSyncToBudget={(specs) => {
+                        handleSyncProtectionsToBudget(specs || customProtectionSpecs);
+                      }}
+                      contractor={contractor}
+                      customer={customer}
+                    />
+                  );
 
-              {activeTab === 'quote' && (
-                <CotizadorTab
-                  items={budgetItems}
-                  setItems={setBudgetItems}
-                  customer={customer}
-                  setCustomer={setCustomer}
-                  contractor={contractor}
-                  setContractor={setContractor}
-                  rooms={rooms}
-                  highAppliances={highAppliances}
-                />
-              )}
+                case 'quote':
+                case '8':
+                  return (
+                    <CotizadorTab
+                      items={budgetItems}
+                      setItems={setBudgetItems}
+                      customer={customer}
+                      setCustomer={setCustomer}
+                      contractor={contractor}
+                      setContractor={setContractor}
+                      rooms={rooms}
+                      highAppliances={highAppliances}
+                    />
+                  );
 
-              {activeTab === 'report' && (
-                <WorkReportTab
-                  reportData={workReport}
-                  setReportData={setWorkReport}
-                  customer={customer}
-                  contractor={contractor}
-                  rooms={rooms}
-                  highAppliances={highAppliances}
-                />
-              )}
+                case 'report':
+                case '9':
+                  return (
+                    <WorkReportTab
+                      reportData={workReport}
+                      setReportData={setWorkReport}
+                      customer={customer}
+                      contractor={contractor}
+                      rooms={rooms}
+                      highAppliances={highAppliances}
+                    />
+                  );
 
-              {activeTab === 'catalog' && (
-                <MaterialsCatalogTab
-                  onAddItemToBudget={handleAddItemToBudget}
-                  onNavigateToQuote={() => setActiveTab('quote')}
-                />
-              )}
+                case 'catalog':
+                case '10':
+                  return (
+                    <MaterialsCatalogTab
+                      onAddItemToBudget={handleAddItemToBudget}
+                      onNavigateToQuote={() => setActiveTab('quote')}
+                    />
+                  );
 
-              {activeTab === 'norms' && <RicNormsTab />}
+                case 'tools':
+                  return <ToolsModule />;
 
-              {activeTab === 'te1' && (
-                <Te1DeclarationTab
-                  user={user}
-                  contractor={contractor}
-                  rooms={rooms}
-                  highAppliances={highAppliances}
-                  feederLength={feederLength}
-                  isThreePhase={isThreePhase}
-                />
-              )}
-            </motion.div>
-          </AnimatePresence>
-        </main>
+                case 'norms':
+                case '11':
+                  return <RicNormsTab />;
 
-      {/* Mobile Bottom Thumb Navigation Bar */}
-      <nav className="sm:hidden fixed bottom-0 left-0 right-0 z-50 bg-slate-900/95 backdrop-blur-md border-t border-slate-800 px-2 py-1.5 flex items-center justify-around text-[10px] text-slate-400 print:hidden">
-        <button
-          onClick={() => setActiveTab('projects')}
-          className={`flex flex-col items-center gap-0.5 p-1 ${
-            activeTab === 'projects' ? 'text-fuchsia-400 font-bold' : 'hover:text-slate-200'
-          }`}
-        >
-          <FolderPlus className="w-4 h-4" />
-          <span>Proyectos</span>
-        </button>
-        <button
-          onClick={() => setActiveTab('census')}
-          className={`flex flex-col items-center gap-0.5 p-1 ${
-            isCensusTab ? 'text-fuchsia-400 font-bold' : 'hover:text-slate-200'
-          }`}
-        >
-          <Zap className="w-4 h-4" />
-          <span>Censo</span>
-        </button>
-        <button
-          onClick={() => setActiveTab('diagnostic')}
-          className={`flex flex-col items-center gap-0.5 p-1 relative ${
-            isDiagnosticTab ? 'text-fuchsia-400 font-bold' : 'hover:text-slate-200'
-          }`}
-        >
-          <Cpu className="w-4 h-4" />
-          <span>Consultor IA</span>
-          <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-fuchsia-500 animate-pulse"></span>
-        </button>
-        <button
-          onClick={() => setActiveTab('assembler')}
-          className={`flex flex-col items-center gap-0.5 p-1 ${
-            isAssemblerTab ? 'text-fuchsia-400 font-bold' : 'hover:text-slate-200'
-          }`}
-        >
-          <ShieldCheck className="w-4 h-4" />
-          <span>Tablero</span>
-        </button>
-        <button
-          onClick={() => setActiveTab('quote')}
-          className={`flex flex-col items-center gap-0.5 p-1 ${
-            activeTab === 'quote' ? 'text-fuchsia-400 font-bold' : 'hover:text-slate-200'
-          }`}
-        >
-          <CheckCircle2 className="w-4 h-4" />
-          <span>Cotizar</span>
-        </button>
-        <button
-          onClick={() => setActiveTab('crm')}
-          className={`flex flex-col items-center gap-0.5 p-1 ${
-            isCrmTab ? 'text-fuchsia-400 font-bold' : 'hover:text-slate-200'
-          }`}
-        >
-          <Users className="w-4 h-4" />
-          <span>Clientes</span>
-        </button>
-        <button
-          onClick={() => setActiveTab('profile')}
-          className={`flex flex-col items-center gap-0.5 p-1 ${
-            activeTab === 'profile' ? 'text-fuchsia-400 font-bold' : 'hover:text-slate-200'
-          }`}
-        >
-          <UserCheck className="w-4 h-4" />
-          <span>Perfil</span>
-        </button>
-      </nav>
+                case 'te1':
+                case '12':
+                  return (
+                    <Te1DeclarationTab
+                      user={user}
+                      contractor={contractor}
+                      rooms={rooms}
+                      highAppliances={highAppliances}
+                      feederLength={feederLength}
+                      isThreePhase={isThreePhase}
+                    />
+                  );
+
+                default:
+                  return (
+                    <DashboardModule
+                      projects={projects}
+                      clients={clients}
+                      budgetHistory={budgetHistory}
+                      onRevertBudgetHistory={handleRevertBudgetHistory}
+                      onNavigateToTab={setActiveTab}
+                      onSelectProjectForQuote={handleSelectProjectForQuote}
+                      rooms={rooms}
+                      highAppliances={highAppliances}
+                      onUpdateProject={(updatedProj) => {
+                        setProjects(prev => prev.map(p => p.id === updatedProj.id ? updatedProj : p));
+                      }}
+                    />
+                  );
+              }
+            })()}
+          </motion.div>
+        </AnimatePresence>
+      </main>
+
+
 
       {/* Login Modal */}
       <LoginModal

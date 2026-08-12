@@ -161,6 +161,8 @@ export interface ContractorConfig {
   phone: string;
   address: string;
   customLogoUrl?: string;
+  customBannerUrl?: string;
+  customAvatarUrl?: string;
   installerSignatureUrl?: string;
   bankDetails: BankAccountDetails;
 }

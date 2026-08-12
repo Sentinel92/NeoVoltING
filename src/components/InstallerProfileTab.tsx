@@ -11,6 +11,7 @@ import {
   RefreshCw,
   GraduationCap,
   Camera,
+  X,
 } from 'lucide-react';
 
 interface InstallerProfileTabProps {
@@ -50,6 +51,37 @@ export const InstallerProfileTab: React.FC<InstallerProfileTabProps> = ({
     setContractor({ ...contractor, customLogoUrl: undefined });
   };
 
+  const handleBannerUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const dataUrl = event.target?.result as string;
+      setContractor({ ...contractor, customBannerUrl: dataUrl });
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleResetBanner = () => {
+    setContractor({ ...contractor, customBannerUrl: undefined });
+  };
+
+  const handleAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const dataUrl = event.target?.result as string;
+      setContractor({ ...contractor, customAvatarUrl: dataUrl });
+      if (setUser) {
+        setUser((prev) => ({ ...prev, googleAvatarUrl: dataUrl }));
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleSaveSignature = (sigUrl: string) => {
     setContractor({ ...contractor, installerSignatureUrl: sigUrl });
   };
@@ -65,27 +97,97 @@ export const InstallerProfileTab: React.FC<InstallerProfileTabProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Header Banner */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 text-fuchsia-400 text-xs font-bold uppercase tracking-wider mb-1">
-            <GraduationCap className="w-4 h-4 text-fuchsia-400" />
-            <span>Perfil Técnico e Instalador Autorizado SEC</span>
+      {/* Compact & Editable Header Banner */}
+      <div className="relative bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-lg">
+        {/* Banner Cover Image or Gradient */}
+        <div className="relative h-28 sm:h-36 w-full bg-slate-950 overflow-hidden">
+          {contractor.customBannerUrl ? (
+            <img
+              src={contractor.customBannerUrl}
+              alt="Banner de Perfil"
+              className="w-full h-full object-cover opacity-85"
+            />
+          ) : (
+            <div className="w-full h-full bg-gradient-to-r from-slate-950 via-fuchsia-950/80 to-indigo-950 opacity-90" />
+          )}
+          <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-black/30" />
+
+          {/* Banner Upload / Edit Controls */}
+          <div className="absolute top-3 right-3 flex items-center gap-2 z-10">
+            <label className="cursor-pointer bg-slate-900/80 hover:bg-slate-900 text-slate-200 border border-slate-700/80 text-[11px] font-bold px-3 py-1.5 rounded-xl shadow backdrop-blur-md transition-all flex items-center gap-1.5 hover:text-white">
+              <Camera className="w-3.5 h-3.5 text-fuchsia-400" />
+              <span>Cambiar Banner</span>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleBannerUpload}
+                className="hidden"
+              />
+            </label>
+            {contractor.customBannerUrl && (
+              <button
+                type="button"
+                onClick={handleResetBanner}
+                className="bg-slate-900/80 hover:bg-slate-900 text-slate-300 border border-slate-700/80 text-[11px] font-bold p-1.5 rounded-xl backdrop-blur-md transition-all hover:text-white"
+                title="Quitar banner personalizado"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
-          <h2 className="text-xl font-bold text-white flex items-center gap-2">
-            <span>Perfil del Instalador, Datos de Cuenta y Firma</span>
-          </h2>
-          <p className="text-xs text-slate-400 mt-1">
-            Información del profesional eléctrico, número de licencia SEC, datos de transferencia bancaria y firma manuscrita digital.
-          </p>
         </div>
 
-        {savedSuccess && (
-          <div className="bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-bold px-4 py-2 rounded-xl flex items-center gap-2 animate-fadeIn">
-            <Check className="w-4 h-4 text-emerald-400" />
-            <span>¡Datos de Perfil Guardados Correctamente!</span>
+        {/* Profile Info Row & Avatar */}
+        <div className="p-4 sm:p-5 pt-0 sm:pt-0 -mt-10 sm:-mt-12 relative z-10 flex flex-col sm:flex-row items-start sm:items-end justify-between gap-4">
+          <div className="flex items-end gap-3 sm:gap-4">
+            {/* Profile Avatar with Camera Button */}
+            <div className="relative group shrink-0">
+              <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl bg-slate-900 border-2 border-fuchsia-500/80 shadow-2xl overflow-hidden flex items-center justify-center text-white font-bold text-2xl">
+                {contractor.customAvatarUrl || user?.googleAvatarUrl ? (
+                  <img
+                    src={contractor.customAvatarUrl || user?.googleAvatarUrl}
+                    alt="Foto de Perfil"
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <div className="w-full h-full bg-gradient-to-br from-fuchsia-600 to-indigo-700 flex items-center justify-center text-white font-extrabold text-2xl">
+                    {contractor.installerName ? contractor.installerName.charAt(0).toUpperCase() : 'N'}
+                  </div>
+                )}
+              </div>
+              <label className="absolute -bottom-1 -right-1 cursor-pointer bg-fuchsia-600 hover:bg-fuchsia-500 text-white p-1.5 rounded-xl shadow-lg border border-slate-900 transition-all hover:scale-105" title="Cambiar Foto de Perfil">
+                <Camera className="w-3.5 h-3.5" />
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleAvatarUpload}
+                  className="hidden"
+                />
+              </label>
+            </div>
+
+            {/* Profile Title & Subtitle */}
+            <div className="pb-1">
+              <div className="flex items-center gap-2 text-fuchsia-400 text-[11px] font-bold uppercase tracking-wider mb-0.5">
+                <GraduationCap className="w-3.5 h-3.5" />
+                <span>Perfil Técnico e Instalador SEC</span>
+              </div>
+              <h2 className="text-lg sm:text-xl font-bold text-white leading-tight">
+                {contractor.installerName || 'Instalador Autorizado'}
+              </h2>
+              <p className="text-xs text-slate-300 font-medium">
+                {contractor.customProfessionalTitle || contractor.companyName || 'Ingeniero en Electricidad'}
+              </p>
+            </div>
           </div>
-        )}
+
+          {savedSuccess && (
+            <div className="bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-bold px-3.5 py-2 rounded-xl flex items-center gap-2 animate-fadeIn shrink-0">
+              <Check className="w-4 h-4 text-emerald-400" />
+              <span>¡Datos Guardados!</span>
+            </div>
+          )}
+        </div>
       </div>
 
       <form onSubmit={handleSaveAll} className="space-y-6">

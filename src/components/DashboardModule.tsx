@@ -36,6 +36,9 @@ import {
   Sparkles,
   RotateCcw,
   History,
+  Edit2,
+  CalendarDays,
+  Check,
 } from 'lucide-react';
 
 interface DashboardModuleProps {
@@ -48,6 +51,7 @@ interface DashboardModuleProps {
   rooms?: RoomData[];
   highAppliances?: HighAppliance[];
   contractedCapacityKW?: number;
+  onUpdateProject?: (project: ElectricalProject) => void;
 }
 
 // Status definitions & theme colors
@@ -138,12 +142,16 @@ export const DashboardModule: React.FC<DashboardModuleProps> = ({
   rooms = [],
   highAppliances = [],
   contractedCapacityKW = 5.5,
+  onUpdateProject,
 }) => {
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<string>('ALL');
   const [selectedYearFilter, setSelectedYearFilter] = useState<string>('ALL');
   const [timeFrameFilter, setTimeFrameFilter] = useState<'ALL' | 'THIS_MONTH' | 'LAST_3_MONTHS' | 'THIS_YEAR'>('ALL');
   const [selectedProjectTypeFilter, setSelectedProjectTypeFilter] = useState<string>('ALL');
   const [showQuickGuide, setShowQuickGuide] = useState<boolean>(false);
+  const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
+  const [editStatus, setEditStatus] = useState<string>('');
+  const [editDeadline, setEditDeadline] = useState<string>('');
 
   // Auto-open quick start guide on first visit
   useEffect(() => {
@@ -609,6 +617,31 @@ export const DashboardModule: React.FC<DashboardModuleProps> = ({
         onClose={() => setShowQuickGuide(false)}
         onNavigateToTab={onNavigateToTab}
       />
+
+      
+
+      {/* Access to Physical Board Generator (Tablero 2D) */}
+      <div className="bg-gradient-to-r from-slate-900 to-slate-800 border border-fuchsia-500/30 rounded-2xl p-5 shadow-xl relative overflow-hidden group">
+        <div className="absolute top-0 right-0 w-32 h-32 bg-fuchsia-500/10 rounded-full blur-2xl -mr-10 -mt-10 group-hover:bg-fuchsia-500/20 transition-all"></div>
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 relative z-10">
+          <div className="flex items-center gap-4">
+            <div className="p-3 bg-fuchsia-500/20 text-fuchsia-400 rounded-xl border border-fuchsia-500/30">
+              <Zap className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="text-white font-bold text-base sm:text-lg">Generador de Tableros 2D Físicos</h3>
+              <p className="text-slate-400 text-xs sm:text-sm">Diseña el diagrama unilineal y físico de tus tableros de forma interactiva.</p>
+            </div>
+          </div>
+          <button
+            onClick={() => onNavigateToTab && onNavigateToTab('physical')}
+            className="w-full sm:w-auto bg-fuchsia-600 hover:bg-fuchsia-500 text-white font-bold py-2 px-4 rounded-xl shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2"
+          >
+            <span>Abrir Simulador 2D</span>
+            <ArrowUpRight className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
 
       {/* Top KPI Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -1274,40 +1307,126 @@ export const DashboardModule: React.FC<DashboardModuleProps> = ({
               ) : (
                 filteredProjects.slice(0, 5).map((project) => {
                   const cfg = STATUS_CONFIG[project.status] || STATUS_CONFIG.COTIZACION;
+                  const isEditing = editingProjectId === project.id;
+                  
                   return (
                     <div
                       key={project.id}
-                      onClick={() => {
-                        if (onSelectProjectForQuote) onSelectProjectForQuote(project);
-                        if (onNavigateToTab) onNavigateToTab('projects');
-                      }}
-                      className="bg-slate-950 p-3 rounded-xl border border-slate-800 hover:border-slate-700 transition-all flex items-center justify-between gap-3 cursor-pointer group"
+                      className="bg-slate-950 p-3 rounded-xl border border-slate-800 hover:border-slate-700 transition-all cursor-pointer group"
                     >
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="font-mono text-[10px] font-extrabold bg-slate-800 text-slate-300 px-1.5 py-0.5 rounded">
-                            {project.code}
-                          </span>
-                          <span
-                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${cfg.bgClass} ${cfg.borderClass} ${cfg.textClass}`}
-                          >
-                            {cfg.label}
-                          </span>
+                      <div className="flex items-center justify-between gap-3 mb-2" 
+                           onClick={() => {
+                             if (!isEditing) {
+                               if (onSelectProjectForQuote) onSelectProjectForQuote(project);
+                               if (onNavigateToTab) onNavigateToTab('projects');
+                             }
+                           }}>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="font-mono text-[10px] font-extrabold bg-slate-800 text-slate-300 px-1.5 py-0.5 rounded">
+                              {project.code}
+                            </span>
+                            {!isEditing && (
+                              <span
+                                className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${cfg.bgClass} ${cfg.borderClass} ${cfg.textClass}`}
+                              >
+                                {cfg.label}
+                              </span>
+                            )}
+                          </div>
+                          <h4 className="text-xs font-bold text-white truncate group-hover:text-fuchsia-300 transition-colors">
+                            {project.title}
+                          </h4>
+                          <p className="text-[11px] text-slate-400 truncate">
+                            Cliente: {project.client?.name || 'Sin asignar'}
+                          </p>
                         </div>
-                        <h4 className="text-xs font-bold text-white truncate group-hover:text-fuchsia-300 transition-colors">
-                          {project.title}
-                        </h4>
-                        <p className="text-[11px] text-slate-400 truncate">
-                          Cliente: {project.client?.name || 'Sin asignar'}
-                        </p>
+
+                        <div className="text-right shrink-0">
+                          <div className="text-xs font-black text-emerald-400">
+                            {formatCLP(project.totalPrice || 0)}
+                          </div>
+                          <div className="text-[10px] text-slate-500">{project.createdAt}</div>
+                          {project.targetDeadline && (
+                            <div className="text-[10px] text-fuchsia-400 mt-1 flex items-center justify-end gap-1">
+                              <CalendarDays className="w-3 h-3" />
+                              {new Date(project.targetDeadline).toLocaleDateString('es-CL')}
+                            </div>
+                          )}
+                        </div>
                       </div>
 
-                      <div className="text-right shrink-0">
-                        <div className="text-xs font-black text-emerald-400">
-                          {formatCLP(project.totalPrice || 0)}
+                      {/* Botón de Quick Edit & Inline Form */}
+                      {!isEditing ? (
+                        <div className="flex justify-end border-t border-slate-800/80 pt-2 mt-2">
+                           <button
+                             onClick={(e) => {
+                               e.stopPropagation();
+                               setEditingProjectId(project.id);
+                               setEditStatus(project.status);
+                               setEditDeadline(project.targetDeadline || '');
+                             }}
+                             className="flex items-center gap-1.5 text-[10px] text-slate-400 hover:text-white px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 transition-colors"
+                           >
+                             <Edit2 className="w-3 h-3" />
+                             <span>Edición Rápida</span>
+                           </button>
                         </div>
-                        <div className="text-[10px] text-slate-500">{project.createdAt}</div>
-                      </div>
+                      ) : (
+                        <div className="mt-3 p-3 bg-slate-900 border border-slate-700 rounded-lg space-y-3" onClick={(e) => e.stopPropagation()}>
+                           <div>
+                             <label className="block text-[10px] font-bold text-slate-400 mb-1">Estado</label>
+                             <select
+                               value={editStatus}
+                               onChange={(e) => setEditStatus(e.target.value)}
+                               className="w-full bg-slate-950 text-white text-xs border border-slate-700 rounded-md px-2 py-1.5 focus:outline-none focus:border-fuchsia-500"
+                             >
+                               <option value="COTIZACION">Cotización</option>
+                               <option value="APROBADO">Aprobado</option>
+                               <option value="EN_EJECUCION">En Ejecución</option>
+                               <option value="COMPLETADO">Finalizado</option>
+                               <option value="CANCELADO">Cancelado</option>
+                             </select>
+                           </div>
+                           <div>
+                             <label className="block text-[10px] font-bold text-slate-400 mb-1">Fecha Límite</label>
+                             <div className="relative">
+                               <CalendarDays className="absolute left-2.5 top-2 w-3.5 h-3.5 text-slate-500" />
+                               <input
+                                 type="date"
+                                 value={editDeadline}
+                                 onChange={(e) => setEditDeadline(e.target.value)}
+                                 className="w-full bg-slate-950 text-white text-xs border border-slate-700 rounded-md pl-8 pr-2 py-1.5 focus:outline-none focus:border-fuchsia-500 [color-scheme:dark]"
+                               />
+                             </div>
+                           </div>
+                           <div className="flex gap-2 pt-1 border-t border-slate-800">
+                             <button
+                               onClick={() => setEditingProjectId(null)}
+                               className="flex-1 bg-slate-800 hover:bg-slate-700 text-white text-xs py-1.5 rounded-md font-medium transition-colors"
+                             >
+                               Cancelar
+                             </button>
+                             <button
+                               onClick={() => {
+                                 if (onUpdateProject) {
+                                   onUpdateProject({
+                                     ...project,
+                                     status: editStatus as any,
+                                     targetDeadline: editDeadline,
+                                     updatedAt: new Date().toLocaleDateString('es-CL'),
+                                   });
+                                 }
+                                 setEditingProjectId(null);
+                               }}
+                               className="flex-1 bg-fuchsia-600 hover:bg-fuchsia-500 text-white text-xs py-1.5 rounded-md font-bold transition-colors flex items-center justify-center gap-1"
+                             >
+                               <Check className="w-3.5 h-3.5" />
+                               Guardar
+                             </button>
+                           </div>
+                        </div>
+                      )}
                     </div>
                   );
                 })

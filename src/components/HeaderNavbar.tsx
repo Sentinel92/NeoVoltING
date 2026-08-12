@@ -1,12 +1,13 @@
 import React from 'react';
 import { UserSession } from '../types';
 import { NeovoltLogo } from './NeovoltLogo';
-import { Zap, ShieldCheck, User, LogIn, LogOut, CheckCircle2, FileSpreadsheet, Users, UserCheck, Wrench, Cpu, Cloud, CloudUpload, Smartphone, RefreshCw, FolderPlus, Wifi, WifiOff, Database, BarChart3 } from 'lucide-react';
+import { Zap, ShieldCheck, User, LogIn, LogOut, CheckCircle2, FileSpreadsheet, Users, UserCheck, Wrench, Cpu, Cloud, CloudUpload, Smartphone, RefreshCw, FolderPlus, Wifi, WifiOff, Database, BarChart3, Menu } from 'lucide-react';
 
 interface HeaderNavbarProps {
   user: UserSession;
   onOpenLogin: () => void;
   onLogout: () => void;
+  onOpenDrawer?: () => void;
   activeTab: string;
   setActiveTab: (tab: string) => void;
   customLogoUrl?: string;
@@ -25,6 +26,7 @@ export const HeaderNavbar: React.FC<HeaderNavbarProps> = ({
   user,
   onOpenLogin,
   onLogout,
+  onOpenDrawer,
   activeTab,
   setActiveTab,
   customLogoUrl,
@@ -41,6 +43,7 @@ export const HeaderNavbar: React.FC<HeaderNavbarProps> = ({
   const tabs = [
     { id: 'dashboard', label: '📊 Dashboard KPI', icon: BarChart3, badge: 'KPIs' },
     { id: 'projects', label: '0. Proyectos & Solicitudes', icon: FolderPlus, badge: 'Nuevo' },
+    { id: 'tools', label: '🧰 Herramientas SEC / RIC', icon: Wrench, badge: 'NUEVO' },
     { id: 'census', label: '1. Levantamiento', icon: Zap },
     { id: 'crm', label: '2. Clientes (CRM)', icon: Users },
     { id: 'profile', label: '3. Perfil Técnico', icon: UserCheck },
@@ -59,9 +62,20 @@ export const HeaderNavbar: React.FC<HeaderNavbarProps> = ({
     <header className="print:hidden bg-slate-900 border-b border-slate-800 sticky top-0 z-40">
       <div className="max-w-7xl mx-auto px-4 sm:px-6">
         <div className="flex items-center justify-between h-16 gap-2">
-          {/* Brand Logo Header */}
-          <div className="cursor-pointer shrink-0" onClick={() => setActiveTab('census')}>
-            <NeovoltLogo customLogoUrl={customLogoUrl} variant="dark" />
+          {/* Brand Logo & Hamburger */}
+          <div className="flex items-center gap-3">
+            {onOpenDrawer && (
+              <button 
+                onClick={onOpenDrawer}
+                className="p-1.5 -ml-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
+                aria-label="Menu"
+              >
+                <Menu className="w-6 h-6" />
+              </button>
+            )}
+            <div className="cursor-pointer shrink-0" onClick={() => setActiveTab('census')}>
+              <NeovoltLogo customLogoUrl={customLogoUrl} variant="dark" />
+            </div>
           </div>
 
           {/* Cloud Sync, Network Status & PWA Install Quick Action Buttons */}
@@ -177,26 +191,6 @@ export const HeaderNavbar: React.FC<HeaderNavbarProps> = ({
               </button>
             )}
           </div>
-        </div>
-
-        {/* Tab Navigation Menu */}
-        <div className="flex items-center gap-1 overflow-x-auto py-2 scrollbar-none border-t border-slate-800/60">
-          {tabs.map((tab) => {
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`whitespace-nowrap px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 ${
-                  isActive
-                    ? 'bg-fuchsia-600 text-white font-semibold shadow-md shadow-fuchsia-600/20'
-                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
-                }`}
-              >
-                {tab.label}
-              </button>
-            );
-          })}
         </div>
       </div>
     </header>
