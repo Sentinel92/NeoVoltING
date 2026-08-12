@@ -227,6 +227,10 @@ export default function InteractiveBoardTab() {
 
   const [successPingCoords, setSuccessPingCoords] = useState<{x: number, y: number} | null>(null);
 
+  const [snapToGrid, setSnapToGrid] = useState<boolean>(true);
+  const [gridSize, setGridSize] = useState<number>(10);
+  const [snapNotice, setSnapNotice] = useState<string | null>(null);
+
   const handleMouseMove = (e: React.MouseEvent) => {
     const pt = getSvgMousePos(e);
     setMousePos(pt);
@@ -240,15 +244,23 @@ export default function InteractiveBoardTab() {
 
   const handleMouseUp = () => {
     if (draggingCompId) {
-      // Snap to grid of 20x20
+      // Snap to grid of 10px (or selected gridSize)
+      let snappedComponent: { name: string; x: number; y: number } | null = null;
+
       setComponents(comps => comps.map(c => {
         if (c.id === draggingCompId) {
-          const snappedX = Math.round(c.x / 20) * 20;
-          const snappedY = Math.round(c.y / 20) * 20;
+          const snappedX = snapToGrid ? Math.round(c.x / gridSize) * gridSize : c.x;
+          const snappedY = snapToGrid ? Math.round(c.y / gridSize) * gridSize : c.y;
+          snappedComponent = { name: c.name, x: snappedX, y: snappedY };
           return { ...c, x: snappedX, y: snappedY };
         }
         return c;
       }));
+
+      if (snapToGrid && snappedComponent) {
+        setSnapNotice(`Alineación Magnética: ${snappedComponent.name} a [x:${snappedComponent.x}, y:${snappedComponent.y}] (${gridSize}px grid)`);
+        setTimeout(() => setSnapNotice(null), 2000);
+      }
     }
     setDraggingCompId(null);
   };
@@ -429,7 +441,7 @@ export default function InteractiveBoardTab() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 p-4 md:p-8 font-sans">
+    <div id="ProfessionalBoardGeneratorTab" className="ProfessionalBoardGeneratorTab min-h-screen bg-slate-950 text-slate-100 p-4 md:p-8 font-sans">
       <div className="max-w-7xl mx-auto space-y-6">
         
         <header className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
@@ -440,7 +452,7 @@ export default function InteractiveBoardTab() {
             </div>
             <h1 className="text-2xl font-black text-white tracking-tight">Armado de Tablero y Validaciones RIC</h1>
             <p className="text-xs text-slate-400 mt-1">
-              Arrastra componentes (Drag & Drop), conecta terminales haciendo clic y valida normativamente el diseño.
+              Arrastra componentes (Drag & Drop) con alineación magnética (Snap 10px), conecta terminales haciendo clic y valida normativamente el diseño.
             </p>
           </div>
         </header>
@@ -537,7 +549,7 @@ export default function InteractiveBoardTab() {
                 <Info className="w-4 h-4 shrink-0 mt-0.5" />
                 <p className="text-[10px] leading-relaxed">
                   <strong>Controles del Tablero:</strong><br/>
-                  • Arrastra componentes para ordenarlos en los rieles.<br/>
+                  • Arrastra componentes: al soltar se alinean magnéticamente a la retícula de {gridSize}px.<br/>
                   • Haz clic en terminales (L, N, PE) para trazar cables.<br/>
                   • La validación impide automáticamente cortocircuitos.
                 </p>
@@ -548,17 +560,57 @@ export default function InteractiveBoardTab() {
 
           {/* RIGHT PANEL: SVG BOARD */}
           <div 
-            className="xl:col-span-3 bg-[#0f172a] border border-slate-800 rounded-2xl overflow-hidden shadow-2xl relative min-h-[600px]"
+            className="board-container xl:col-span-3 bg-[#0f172a] border border-slate-800 rounded-2xl overflow-hidden shadow-2xl relative min-h-[600px]"
             onMouseUp={handleMouseUp}
             onMouseLeave={handleMouseUp}
           >
             
             {/* Toolbar internal */}
-            <div className="absolute top-4 right-4 z-10 bg-slate-900/80 backdrop-blur-md p-1.5 rounded-xl border border-slate-700 flex gap-1">
+            <div className="absolute top-4 right-4 z-10 bg-slate-900/90 backdrop-blur-md p-1.5 rounded-xl border border-slate-700 flex items-center gap-2 text-xs shadow-lg">
+              <button
+                onClick={() => setSnapToGrid(!snapToGrid)}
+                className={`px-2.5 py-1.5 rounded-lg font-bold flex items-center gap-1.5 transition text-xs ${
+                  snapToGrid 
+                    ? 'bg-fuchsia-600/30 text-fuchsia-300 border border-fuchsia-500/50 shadow-inner' 
+                    : 'bg-slate-800 text-slate-400 border border-slate-700 hover:text-white'
+                }`}
+                title="Conmutar alineación magnética a cuadrícula"
+              >
+                <LayoutGrid className="w-3.5 h-3.5 text-fuchsia-400" />
+                <span>Snap-to-Grid ({gridSize}px): {snapToGrid ? 'ON' : 'OFF'}</span>
+              </button>
+
+              <select
+                value={gridSize}
+                onChange={(e) => setGridSize(Number(e.target.value))}
+                className="bg-slate-800 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-fuchsia-500"
+              >
+                <option value={10}>Retícula 10px</option>
+                <option value={20}>Retícula 20px</option>
+                <option value={5}>Retícula 5px</option>
+              </select>
+
+              <div className="w-px h-5 bg-slate-800 my-auto" />
+
               <button onClick={() => setWires([])} className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition" title="Limpiar Cables">
                 <Trash2 className="w-4 h-4" />
               </button>
             </div>
+
+            {/* Snap Notification Toast */}
+            <AnimatePresence>
+              {snapNotice && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                  className="absolute bottom-4 left-4 z-20 bg-slate-900/90 border border-fuchsia-500/50 backdrop-blur-md px-3.5 py-2 rounded-xl text-xs text-fuchsia-300 font-mono shadow-2xl flex items-center gap-2"
+                >
+                  <span className="w-2 h-2 rounded-full bg-fuchsia-400 animate-ping" />
+                  <span>{snapNotice}</span>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
             <svg
               ref={svgRef}
@@ -569,8 +621,14 @@ export default function InteractiveBoardTab() {
               }}
             >
               <defs>
-                <pattern id="gridPattern" width="40" height="40" patternUnits="userSpaceOnUse">
-                  <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1e293b" strokeWidth="1"/>
+                {/* 10px Sub-grid Pattern */}
+                <pattern id="gridPattern10" width="10" height="10" patternUnits="userSpaceOnUse">
+                  <path d="M 10 0 L 0 0 0 10" fill="none" stroke="#1e293b" strokeWidth="0.5" strokeDasharray="1,2" />
+                </pattern>
+                {/* 50px Major Grid Pattern */}
+                <pattern id="gridPattern50" width="50" height="50" patternUnits="userSpaceOnUse">
+                  <rect width="50" height="50" fill="url(#gridPattern10)" />
+                  <path d="M 50 0 L 0 0 0 50" fill="none" stroke="#334155" strokeWidth="0.8" />
                 </pattern>
                 <filter id="glow">
                   <feGaussianBlur stdDeviation="2.5" result="coloredBlur"/>
@@ -581,7 +639,7 @@ export default function InteractiveBoardTab() {
                 </filter>
               </defs>
 
-              <rect width="100%" height="100%" fill="url(#gridPattern)" />
+              <rect width="100%" height="100%" fill="url(#gridPattern50)" />
 
               {/* Rieles DIN decorativos */}
               <rect x="40" y="180" width="800" height="40" rx="2" fill="#334155" stroke="#475569" />

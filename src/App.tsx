@@ -1327,7 +1327,17 @@ export default function App() {
                   );
 
                 case 'tools':
-                  return <ToolsModule />;
+                  return (
+                    <ToolsModule
+                      onNavigateToTab={setActiveTab}
+                      rooms={rooms}
+                      highAppliances={highAppliances}
+                      onExportWiresToBudget={(items) => {
+                        setBudgetItems(prev => [...prev, ...items]);
+                        setActiveTab('quote');
+                      }}
+                    />
+                  );
 
                 case 'norms':
                 case '11':
