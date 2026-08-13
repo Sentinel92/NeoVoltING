@@ -112,7 +112,256 @@ export default function InteractiveBoardTab() {
   const [showAssemblyReportModal, setShowAssemblyReportModal] = useState<boolean>(false);
   const [copiedReport, setCopiedReport] = useState<boolean>(false);
   
+  // Interactive Energy Simulation & Wiring Verifier States
+  const [isEnergySimulated, setIsEnergySimulated] = useState<boolean>(false);
+  const [isWiringVerifierActive, setIsWiringVerifierActive] = useState<boolean>(false);
+  const [verifierStep, setVerifierStep] = useState<number>(0);
+
   const svgRef = useRef<SVGSVGElement>(null);
+
+  // Single-Line Logic Step-by-Step Expected Wiring Steps
+  const expectedWiringSteps = useMemo(() => {
+    const steps: Array<{
+      id: string;
+      title: string;
+      description: string;
+      fromCompId: string;
+      fromTermId: string;
+      toCompId: string;
+      toTermId: string;
+      color: string;
+    }> = [];
+
+    if (supplyType === 'TRIFASICO_380') {
+      steps.push({
+        id: 'step_grid_iga_l1',
+        title: 'Paso 1: Acometida Fase L1 → IGA (Polo L1)',
+        description: 'Conecte la salida de Fase L1 de la Red 380V a la entrada L1 del Interruptor General Acometida (IGA).',
+        fromCompId: 'grid', fromTermId: 'grid_out_l1',
+        toCompId: 'iga', toTermId: 'iga_in_l1',
+        color: '#ef4444'
+      });
+      steps.push({
+        id: 'step_grid_iga_l2',
+        title: 'Paso 2: Acometida Fase L2 → IGA (Polo L2)',
+        description: 'Conecte la salida de Fase L2 de la Red 380V a la entrada L2 del IGA.',
+        fromCompId: 'grid', fromTermId: 'grid_out_l2',
+        toCompId: 'iga', toTermId: 'iga_in_l2',
+        color: '#475569'
+      });
+      steps.push({
+        id: 'step_grid_iga_l3',
+        title: 'Paso 3: Acometida Fase L3 → IGA (Polo L3)',
+        description: 'Conecte la salida de Fase L3 de la Red 380V a la entrada L3 del IGA.',
+        fromCompId: 'grid', fromTermId: 'grid_out_l3',
+        toCompId: 'iga', toTermId: 'iga_in_l3',
+        color: '#d97706'
+      });
+      steps.push({
+        id: 'step_grid_iga_n',
+        title: 'Paso 4: Acometida Neutro N → IGA (Polo N)',
+        description: 'Conecte el Neutro (N) de la red al polo Neutro de entrada del IGA 4P.',
+        fromCompId: 'grid', fromTermId: 'grid_out_n',
+        toCompId: 'iga', toTermId: 'iga_in_n',
+        color: '#38bdf8'
+      });
+      steps.push({
+        id: 'step_iga_rcd_l1',
+        title: 'Paso 5: IGA Salida L1 → RCD Entrada L1',
+        description: 'Alimentación de Fase L1 desde la salida del IGA hacia la entrada del Protector Diferencial (RCD 30mA).',
+        fromCompId: 'iga', fromTermId: 'iga_out_l1',
+        toCompId: 'rcd', toTermId: 'rcd_in_l1',
+        color: '#ef4444'
+      });
+      steps.push({
+        id: 'step_iga_rcd_l2',
+        title: 'Paso 6: IGA Salida L2 → RCD Entrada L2',
+        description: 'Alimentación de Fase L2 desde IGA hacia el RCD.',
+        fromCompId: 'iga', fromTermId: 'iga_out_l2',
+        toCompId: 'rcd', toTermId: 'rcd_in_l2',
+        color: '#475569'
+      });
+      steps.push({
+        id: 'step_iga_rcd_l3',
+        title: 'Paso 7: IGA Salida L3 → RCD Entrada L3',
+        description: 'Alimentación de Fase L3 desde IGA hacia el RCD.',
+        fromCompId: 'iga', fromTermId: 'iga_out_l3',
+        toCompId: 'rcd', toTermId: 'rcd_in_l3',
+        color: '#d97706'
+      });
+      steps.push({
+        id: 'step_iga_rcd_n',
+        title: 'Paso 8: IGA Salida N → RCD Entrada N',
+        description: 'Alimentación de Neutro N desde la salida de IGA hacia el RCD.',
+        fromCompId: 'iga', fromTermId: 'iga_out_n',
+        toCompId: 'rcd', toTermId: 'rcd_in_n',
+        color: '#38bdf8'
+      });
+      steps.push({
+        id: 'step_rcd_bar_n',
+        title: 'Paso 9: RCD Salida N → Bornera Barra Neutro',
+        description: 'Conecte la salida de Neutro del RCD a la bornera principal aislada de Neutro.',
+        fromCompId: 'rcd', fromTermId: 'rcd_out_n',
+        toCompId: 'bar_n', toTermId: 'bar_n_0',
+        color: '#38bdf8'
+      });
+    } else {
+      steps.push({
+        id: 'step_grid_iga_l',
+        title: 'Paso 1: Acometida Fase L → IGA (Polo L)',
+        description: 'Conecte la salida de Fase (L) del Empalme 220V a la entrada de Fase (L) del IGA.',
+        fromCompId: 'grid', fromTermId: 'grid_out_l',
+        toCompId: 'iga', toTermId: 'iga_in_l',
+        color: '#ef4444'
+      });
+      steps.push({
+        id: 'step_grid_iga_n',
+        title: 'Paso 2: Acometida Neutro N → IGA (Polo N)',
+        description: 'Conecte el Neutro (N) de la red al polo Neutro de entrada del IGA.',
+        fromCompId: 'grid', fromTermId: 'grid_out_n',
+        toCompId: 'iga', toTermId: 'iga_in_n',
+        color: '#38bdf8'
+      });
+      steps.push({
+        id: 'step_iga_rcd_l',
+        title: 'Paso 3: IGA Salida L → RCD Entrada L',
+        description: 'Alimentación de Fase L desde la salida del IGA hacia la entrada del Protector Diferencial RCD.',
+        fromCompId: 'iga', fromTermId: 'iga_out_l',
+        toCompId: 'rcd', toTermId: 'rcd_in_l',
+        color: '#ef4444'
+      });
+      steps.push({
+        id: 'step_iga_rcd_n',
+        title: 'Paso 4: IGA Salida N → RCD Entrada N',
+        description: 'Alimentación de Neutro N desde la salida de IGA hacia la entrada N del RCD.',
+        fromCompId: 'iga', fromTermId: 'iga_out_n',
+        toCompId: 'rcd', toTermId: 'rcd_in_n',
+        color: '#38bdf8'
+      });
+      steps.push({
+        id: 'step_rcd_bar_n',
+        title: 'Paso 5: RCD Salida N → Bornera Barra Neutro',
+        description: 'Conecte el neutro protegido de salida del RCD a la bornera distribuida de Neutro.',
+        fromCompId: 'rcd', fromTermId: 'rcd_out_n',
+        toCompId: 'bar_n', toTermId: 'bar_n_0',
+        color: '#38bdf8'
+      });
+    }
+
+    const mcbs = components.filter(c => c.type === 'MCB');
+    const rcdPhaseTerm = supplyType === 'TRIFASICO_380' ? 'rcd_out_l1' : 'rcd_out_l';
+
+    mcbs.forEach((mcb, idx) => {
+      steps.push({
+        id: `step_rcd_mcb_${idx}`,
+        title: `Paso ${steps.length + 1}: RCD Salida L → Disyuntor ${mcb.name}`,
+        description: `Puente de alimentación de fase desde la salida del RCD hacia la entrada del Disyuntor ${mcb.name}.`,
+        fromCompId: 'rcd', fromTermId: rcdPhaseTerm,
+        toCompId: mcb.id, toTermId: `mcb_${idx}_in_l`,
+        color: '#ef4444'
+      });
+
+      const loadCompId = `load_comp_${idx}`;
+      const loadComp = components.find(c => c.id === loadCompId);
+      if (loadComp) {
+        steps.push({
+          id: `step_mcb_load_${idx}`,
+          title: `Paso ${steps.length + 1}: Disyuntor ${mcb.name} → ${loadComp.name} (Fase)`,
+          description: `Salida de fase desde el disyuntor ${mcb.name} hacia el circuito alimentado.`,
+          fromCompId: mcb.id, fromTermId: `mcb_${idx}_out_l`,
+          toCompId: loadCompId, toTermId: `load_${idx}_l`,
+          color: '#ef4444'
+        });
+
+        steps.push({
+          id: `step_load_bar_n_${idx}`,
+          title: `Paso ${steps.length + 1}: ${loadComp.name} → Barra de Neutro (N)`,
+          description: `Retorno de neutro del circuito hacia la bornera de neutro N${idx + 1}.`,
+          fromCompId: loadCompId, fromTermId: `load_${idx}_n`,
+          toCompId: 'bar_n', toTermId: `bar_n_${Math.min(idx + 1, 7)}`,
+          color: '#38bdf8'
+        });
+
+        steps.push({
+          id: `step_load_bar_pe_${idx}`,
+          title: `Paso ${steps.length + 1}: ${loadComp.name} → Barra Tierra PE`,
+          description: `Conexión de protección de tierra (PE) del circuito a la barra colectora de tierra PE.`,
+          fromCompId: loadCompId, fromTermId: `load_${idx}_pe`,
+          toCompId: 'bar_pe', toTermId: `bar_pe_${Math.min(idx + 1, 7)}`,
+          color: '#22c55e'
+        });
+      }
+    });
+
+    steps.push({
+      id: `step_grid_pe`,
+      title: `Paso ${steps.length + 1}: Acometida Tierra PE → Barra Tierra PE`,
+      description: 'Conecte la tierra principal de la acometida a la bornera principal de la Barra Tierra PE.',
+      fromCompId: 'grid', fromTermId: 'grid_out_pe',
+      toCompId: 'bar_pe', toTermId: 'bar_pe_0',
+      color: '#22c55e'
+    });
+
+    return steps;
+  }, [components, supplyType]);
+
+  const isStepCompleted = (step: (typeof expectedWiringSteps)[0]) => {
+    if (!step) return false;
+    return wires.some(
+      w =>
+        (w.fromCompId === step.fromCompId &&
+          w.fromTermId === step.fromTermId &&
+          w.toCompId === step.toCompId &&
+          w.toTermId === step.toTermId) ||
+        (w.fromCompId === step.toCompId &&
+          w.fromTermId === step.toTermId &&
+          w.toCompId === step.fromCompId &&
+          w.toTermId === step.fromTermId)
+    );
+  };
+
+  const handleAutoWireStep = (step: (typeof expectedWiringSteps)[0]) => {
+    if (!step || isStepCompleted(step)) return;
+    const newWire: Wire = {
+      id: `w_auto_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+      fromCompId: step.fromCompId,
+      fromTermId: step.fromTermId,
+      toCompId: step.toCompId,
+      toTermId: step.toTermId,
+      color: step.color
+    };
+    setWires(prev => [...prev, newWire]);
+  };
+
+  const handleAutoWireAll = () => {
+    const newWires: Wire[] = [...wires];
+    expectedWiringSteps.forEach(step => {
+      const done = newWires.some(
+        w =>
+          (w.fromCompId === step.fromCompId &&
+            w.fromTermId === step.fromTermId &&
+            w.toCompId === step.toCompId &&
+            w.toTermId === step.toTermId) ||
+          (w.fromCompId === step.toCompId &&
+            w.fromTermId === step.toTermId &&
+            w.toCompId === step.fromCompId &&
+            w.toTermId === step.fromTermId)
+      );
+      if (!done) {
+        newWires.push({
+          id: `w_auto_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+          fromCompId: step.fromCompId,
+          fromTermId: step.fromTermId,
+          toCompId: step.toCompId,
+          toTermId: step.toTermId,
+          color: step.color
+        });
+      }
+    });
+    setWires(newWires);
+  };
+
+  const activeStep = expectedWiringSteps[verifierStep % Math.max(1, expectedWiringSteps.length)];
 
   const getCapacityByProperty = (typeStr: string): number => {
     const s = (typeStr || '').toLowerCase();
@@ -725,8 +974,47 @@ export default function InteractiveBoardTab() {
                 </div>
               </div>
 
-              {/* GRID & WIRE ACTIONS */}
-              <div className="flex items-center gap-2 text-xs">
+              {/* GRID, WIRE & SIMULATION ACTIONS */}
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                {/* SIMULAR ENERGIA BUTTON */}
+                <button
+                  onClick={() => {
+                    const next = !isEnergySimulated;
+                    setIsEnergySimulated(next);
+                    setSnapNotice(next ? "⚡ Energía simulada activada: circuito energizado y componentes encendidos." : "🛑 Simulación de energía desactivada.");
+                    setTimeout(() => setSnapNotice(null), 3000);
+                  }}
+                  className={`px-3 py-1.5 rounded-xl font-black text-xs flex items-center gap-1.5 transition-all shadow-md border ${
+                    isEnergySimulated
+                      ? 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 border-emerald-300 shadow-emerald-500/40 animate-pulse'
+                      : 'bg-slate-800 hover:bg-slate-700 text-emerald-400 border-emerald-500/40'
+                  }`}
+                  title="Simular flujo de energía eléctrica sobre los cables validados y encender componentes"
+                >
+                  <Zap className={`w-4 h-4 ${isEnergySimulated ? 'fill-current text-slate-950 animate-bounce' : 'text-emerald-400'}`} />
+                  <span>{isEnergySimulated ? 'Energía ON ⚡' : 'Simular Energía'}</span>
+                </button>
+
+                {/* VERIFICADOR DE CABLEADO BUTTON */}
+                <button
+                  onClick={() => {
+                    const next = !isWiringVerifierActive;
+                    setIsWiringVerifierActive(next);
+                    if (next) setVerifierStep(0);
+                    setSnapNotice(next ? "🔍 Modo Verificador de Cableado activado: Siga las líneas punteadas paso a paso." : "Verificador de cableado desactivado.");
+                    setTimeout(() => setSnapNotice(null), 3000);
+                  }}
+                  className={`px-3 py-1.5 rounded-xl font-black text-xs flex items-center gap-1.5 transition-all shadow-md border ${
+                    isWiringVerifierActive
+                      ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 border-amber-300 shadow-amber-500/30'
+                      : 'bg-slate-800 hover:bg-slate-700 text-amber-400 border-amber-500/40'
+                  }`}
+                  title="Modo Verificador de Cableado: Resalta con líneas punteadas el camino del esquema unilineal"
+                >
+                  <Layers className="w-4 h-4 text-amber-400" />
+                  <span>{isWiringVerifierActive ? 'Verificador ON' : 'Verificador de Cableado'}</span>
+                </button>
+
                 <button
                   onClick={() => setSnapToGrid(!snapToGrid)}
                   className={`px-2.5 py-1.5 rounded-lg font-bold flex items-center gap-1.5 transition ${
@@ -747,6 +1035,72 @@ export default function InteractiveBoardTab() {
                 </button>
               </div>
             </div>
+
+            {/* VERIFICADOR DE CABLEADO - STEP GUIDANCE BANNER */}
+            {isWiringVerifierActive && activeStep && (
+              <div className="absolute top-20 left-4 right-4 z-20 bg-slate-900/95 border-2 border-amber-500/80 backdrop-blur-md p-3.5 rounded-2xl shadow-2xl space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping" />
+                    <span className="text-xs font-black text-amber-300 uppercase tracking-wider">
+                      Verificador de Cableado - Paso {verifierStep + 1} / {expectedWiringSteps.length}
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <button
+                      onClick={() => setVerifierStep(prev => Math.max(0, prev - 1))}
+                      disabled={verifierStep === 0}
+                      className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-200 rounded-lg text-[11px] font-bold transition"
+                    >
+                      ← Anterior
+                    </button>
+                    <button
+                      onClick={() => setVerifierStep(prev => Math.min(expectedWiringSteps.length - 1, prev + 1))}
+                      disabled={verifierStep === expectedWiringSteps.length - 1}
+                      className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-200 rounded-lg text-[11px] font-bold transition"
+                    >
+                      Siguiente →
+                    </button>
+                    <button
+                      onClick={() => handleAutoWireStep(activeStep)}
+                      className="px-3 py-1 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg text-[11px] font-black shadow transition"
+                    >
+                      ⚡ Cablear Paso
+                    </button>
+                    <button
+                      onClick={handleAutoWireAll}
+                      className="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-[11px] font-bold shadow transition"
+                    >
+                      ✓ Cablear Todo
+                    </button>
+                    <button
+                      onClick={() => setIsWiringVerifierActive(false)}
+                      className="text-slate-400 hover:text-white p-1 ml-1"
+                      title="Cerrar Verificador"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                  <div>
+                    <strong className="text-white block font-bold text-xs">{activeStep.title}</strong>
+                    <p className="text-slate-300 text-[11px] leading-relaxed">{activeStep.description}</p>
+                  </div>
+
+                  <div className="shrink-0 flex items-center gap-2">
+                    <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full border ${
+                      isStepCompleted(activeStep)
+                        ? 'bg-emerald-950 text-emerald-300 border-emerald-500/50'
+                        : 'bg-amber-950 text-amber-300 border-amber-500/50 animate-pulse'
+                    }`}>
+                      {isStepCompleted(activeStep) ? '✓ CONECTADO' : '⏳ PENDIENTE (Línea Punteada Guía)'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* REAL-TIME FLOATING HUD PANEL (BOTTOM-RIGHT INSIDE BOARD CONTAINER) */}
             <div className="absolute bottom-4 right-4 z-20 bg-slate-900/95 backdrop-blur-md p-4 rounded-2xl border border-slate-700 shadow-2xl space-y-2 min-w-[280px]">
@@ -834,6 +1188,24 @@ export default function InteractiveBoardTab() {
                     <feMergeNode in="SourceGraphic"/>
                   </feMerge>
                 </filter>
+
+                {/* ENERGY GLOW FILTER */}
+                <filter id="energyGlow" x="-30%" y="-30%" width="160%" height="160%">
+                  <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
+                  <feMerge>
+                    <feMergeNode in="coloredBlur"/>
+                    <feMergeNode in="SourceGraphic"/>
+                  </feMerge>
+                </filter>
+
+                {/* VERIFIER GLOW FILTER */}
+                <filter id="verifierGlow" x="-30%" y="-30%" width="160%" height="160%">
+                  <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
+                  <feMerge>
+                    <feMergeNode in="coloredBlur"/>
+                    <feMergeNode in="SourceGraphic"/>
+                  </feMerge>
+                </filter>
               </defs>
 
               {/* GRID BACKGROUND */}
@@ -861,6 +1233,18 @@ export default function InteractiveBoardTab() {
                       strokeWidth="3.5"
                       strokeLinecap="round"
                     />
+                    {/* ELECTRIC PULSE ANIMATION WHEN ENERGIZED */}
+                    {isEnergySimulated && (
+                      <path
+                        d={getWirePath(p1.x, p1.y, p2.x, p2.y)}
+                        fill="none"
+                        stroke={w.color === '#38bdf8' ? '#38bdf8' : w.color === '#22c55e' ? '#4ade80' : '#facc15'}
+                        strokeWidth="4"
+                        strokeLinecap="round"
+                        className="electric-pulse-wire"
+                        filter="url(#energyGlow)"
+                      />
+                    )}
                     <path
                       d={getWirePath(p1.x, p1.y, p2.x, p2.y)}
                       fill="none"
@@ -875,6 +1259,46 @@ export default function InteractiveBoardTab() {
                   </g>
                 );
               })}
+
+              {/* VERIFICADOR DE CABLEADO - DASHED GUIDANCE LINE */}
+              {isWiringVerifierActive && activeStep && (
+                <g key={`verifier_guide_${activeStep.id}`}>
+                  {/* Dashed line path */}
+                  <path
+                    d={getWirePath(
+                      getTerminalAbsoluteCoords(activeStep.fromCompId, activeStep.fromTermId).x,
+                      getTerminalAbsoluteCoords(activeStep.fromCompId, activeStep.fromTermId).y,
+                      getTerminalAbsoluteCoords(activeStep.toCompId, activeStep.toTermId).x,
+                      getTerminalAbsoluteCoords(activeStep.toCompId, activeStep.toTermId).y
+                    )}
+                    fill="none"
+                    stroke="#f59e0b"
+                    strokeWidth="3.5"
+                    className="verifier-dashed-wire"
+                    filter="url(#verifierGlow)"
+                  />
+                  {/* Start terminal pulsing indicator */}
+                  <circle
+                    cx={getTerminalAbsoluteCoords(activeStep.fromCompId, activeStep.fromTermId).x}
+                    cy={getTerminalAbsoluteCoords(activeStep.fromCompId, activeStep.fromTermId).y}
+                    r={12}
+                    fill="none"
+                    stroke="#f59e0b"
+                    strokeWidth="2.5"
+                    className="animate-ping"
+                  />
+                  {/* End terminal pulsing indicator */}
+                  <circle
+                    cx={getTerminalAbsoluteCoords(activeStep.toCompId, activeStep.toTermId).x}
+                    cy={getTerminalAbsoluteCoords(activeStep.toCompId, activeStep.toTermId).y}
+                    r={12}
+                    fill="none"
+                    stroke="#f59e0b"
+                    strokeWidth="2.5"
+                    className="animate-ping"
+                  />
+                </g>
+              )}
 
               {/* ACTIVE DRAWING WIRE WITH RED INCOMPATIBILITY FEEDBACK */}
               {activeWireStart && (
@@ -932,6 +1356,29 @@ export default function InteractiveBoardTab() {
                       <rect x={0} y={0} width={comp.w} height={comp.h} fill="#334155" rx="8" stroke="#94a3b8" strokeWidth="2" />
                     ) : (
                       <rect x={0} y={0} width={comp.w} height={comp.h} fill="#0f172a" rx="6" stroke="#475569" strokeWidth="2" />
+                    )}
+
+                    {/* ENERGIZED GLOW & STATUS LED WHEN SIMULATING ENERGY */}
+                    {isEnergySimulated && (
+                      <>
+                        <rect
+                          x={-2}
+                          y={-2}
+                          width={comp.w + 4}
+                          height={comp.h + 4}
+                          fill="none"
+                          stroke="#22c55e"
+                          strokeWidth="2"
+                          rx={comp.type.startsWith('BAR') ? "6" : "8"}
+                          filter="url(#energyGlow)"
+                        />
+                        <g transform={`translate(${comp.w - (comp.w < 60 ? 20 : 34)}, 6)`}>
+                          <circle cx="5" cy="5" r="4" fill="#22c55e" filter="url(#energyGlow)" className="animate-pulse" />
+                          {comp.w >= 60 && (
+                            <text x="12" y="8" fill="#22c55e" fontSize="8" fontWeight="900" style={{ pointerEvents: 'none' }}>ON ⚡</text>
+                          )}
+                        </g>
+                      </>
                     )}
 
                     {/* BLUE GLOW HIGHLIGHT ON HOVER OR DRAG */}

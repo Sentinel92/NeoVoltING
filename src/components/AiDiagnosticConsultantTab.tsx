@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { UserSession } from '../types';
 import {
   Wrench,
@@ -18,12 +18,16 @@ import {
   Upload,
   Image as ImageIcon,
   Trash2,
-  FileCode2,
   ShieldCheck,
   RefreshCw,
   Mic,
   MicOff,
   Save,
+  MessageSquare,
+  PlusCircle,
+  AlertCircle,
+  Bot,
+  UserCheck
 } from 'lucide-react';
 import Markdown from 'react-markdown';
 
@@ -31,6 +35,17 @@ interface AiDiagnosticConsultantTabProps {
   isSecCertified?: boolean;
   currentUser?: UserSession;
   onUpdateUserSession?: (updated: UserSession) => void;
+}
+
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'model';
+  text: string;
+  images?: { id: string; name: string; dataUrl: string }[];
+  installationType?: string;
+  missingTools?: string[];
+  timestamp: string;
+  isError?: boolean;
 }
 
 export const AiDiagnosticConsultantTab: React.FC<AiDiagnosticConsultantTabProps> = ({
@@ -45,6 +60,8 @@ export const AiDiagnosticConsultantTab: React.FC<AiDiagnosticConsultantTabProps>
   },
   onUpdateUserSession,
 }) => {
+  // Chat History State
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [faultDescription, setFaultDescription] = useState('');
   const [installationType, setInstallationType] = useState('Monofásica 220V Residencial');
   const [selectedMissingTools, setSelectedMissingTools] = useState<string[]>([]);
@@ -52,10 +69,34 @@ export const AiDiagnosticConsultantTab: React.FC<AiDiagnosticConsultantTabProps>
   const [uploadedPhotos, setUploadedPhotos] = useState<
     { id: string; name: string; dataUrl: string; sizeKb: number }[]
   >([]);
+  
+  // Loading & UI States
   const [loading, setLoading] = useState(false);
-  const [analysisResult, setAnalysisResult] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const [isListening, setIsListening] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Api Key input state (for inline or modal custom key)
+  const [apiKeyInput, setApiKeyInput] = useState<string>(
+    currentUser.customGeminiApiKey || ''
+  );
+  const [showApiKeyNotice, setShowApiKeyNotice] = useState<boolean>(false);
+
+  // Account Modal State
+  const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
+  const [switchEmail, setSwitchEmail] = useState(currentUser.email || 'ineovolt@gmail.com');
+  const [switchName, setSwitchName] = useState(currentUser.name || 'Instalador NEOVOLT');
+  const [customApiKeyModal, setCustomApiKeyModal] = useState(currentUser.customGeminiApiKey || '');
+
+  // File Input & Chat Scroll Refs
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const chatBottomRef = useRef<HTMLDivElement>(null);
+
+  // Scroll to bottom when new messages arrive
+  useEffect(() => {
+    chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, loading]);
 
   const toggleVoiceRecognition = () => {
     if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
@@ -84,16 +125,6 @@ export const AiDiagnosticConsultantTab: React.FC<AiDiagnosticConsultantTabProps>
     recognition.start();
   };
 
-  // Modal State for Account & Gemini API Key
-  const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
-  const [switchEmail, setSwitchEmail] = useState(currentUser.email || 'ineovolt@gmail.com');
-  const [switchName, setSwitchName] = useState(currentUser.name || 'Instalador NEOVOLT');
-  const [customApiKey, setCustomApiKey] = useState(currentUser.customGeminiApiKey || '');
-
-  // File Input Refs
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const cameraInputRef = useRef<HTMLInputElement>(null);
-
   const commonFaultTemplates = [
     {
       title: '📷 Foto de Tablero o Quemadura en Bornes',
@@ -103,22 +134,22 @@ export const AiDiagnosticConsultantTab: React.FC<AiDiagnosticConsultantTabProps>
     {
       title: '⚡ Salta el Diferencial (RCD) sin causa aparente',
       desc: 'El interruptor diferencial salta a distintas horas o al conectar cierto electrodoméstico.',
-      toolsMissing: ['Megóhmetro (500V)', 'Pinza Fuga mA'],
+      toolsMissing: ['Megóhmetro / Medidor de Aislamiento 500V', 'Pinza Amperimétrica de Fuga en mA'],
     },
     {
       title: '🔥 Calentamiento o zumbido en Tablero / Disyuntor',
       desc: 'Disyuntor C16 o IGA está caliente al tacto o emite un zumbido/chispazo constante.',
-      toolsMissing: ['Cámara Termográfica', 'Multímetro RMS'],
+      toolsMissing: ['Cámara Termográfica', 'Multímetro Digital RMS'],
     },
     {
       title: '🔌 Enchufes sin energía pero ningún disyuntor caído',
       desc: 'Se perdió la tensión en un sector de la propiedad, pero en el tablero todo está arriba.',
-      toolsMissing: ['Buscapolos Digital', 'Probador de Enchufes RCD'],
+      toolsMissing: ['Buscapolos Inductivo sin Contacto'],
     },
     {
       title: '💡 Luces parpadean al encender motor o hervidor',
       desc: 'Caída de tensión severa o variación de luminosidad en el circuito de alumbrado.',
-      toolsMissing: ['Analizador de Redes', 'Pinza Amperimétrica'],
+      toolsMissing: ['Pinza Amperimétrica de Fuga en mA'],
     },
   ];
 
@@ -213,72 +244,149 @@ export const AiDiagnosticConsultantTab: React.FC<AiDiagnosticConsultantTabProps>
     e.preventDefault();
     if (!switchEmail.trim()) return;
 
+    const keyToUse = customApiKeyModal.trim() || undefined;
+    setApiKeyInput(customApiKeyModal.trim());
+
     if (onUpdateUserSession) {
       onUpdateUserSession({
         ...currentUser,
         email: switchEmail.trim(),
         name: switchName.trim() || switchEmail.split('@')[0],
         isLoggedIn: true,
-        customGeminiApiKey: customApiKey.trim() || undefined,
+        customGeminiApiKey: keyToUse,
       });
     }
     setIsAccountModalOpen(false);
+    setShowApiKeyNotice(false);
   };
 
-  const handleRunDiagnostic = async (e?: React.FormEvent) => {
+  const handleSaveApiKeyInline = () => {
+    if (!apiKeyInput.trim()) return;
+    if (onUpdateUserSession) {
+      onUpdateUserSession({
+        ...currentUser,
+        customGeminiApiKey: apiKeyInput.trim(),
+      });
+    }
+    setShowApiKeyNotice(false);
+  };
+
+  const handleClearChat = () => {
+    if (messages.length === 0) return;
+    if (confirm('¿Deseas iniciar una nueva consulta y borrar el historial del chat actual?')) {
+      setMessages([]);
+      setFaultDescription('');
+      setUploadedPhotos([]);
+      setErrorMessage(null);
+    }
+  };
+
+  const handleSendQuery = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!faultDescription.trim() && uploadedPhotos.length === 0) {
-      alert('Por favor ingrese una descripción del problema o adjunte al menos una fotografía.');
+    const promptText = faultDescription.trim();
+
+    if (!promptText && uploadedPhotos.length === 0) {
+      alert('Por favor ingrese una descripción de la falla o adjunte al menos una fotografía.');
       return;
     }
 
+    setErrorMessage(null);
+    const activeApiKey = apiKeyInput.trim() || currentUser.customGeminiApiKey;
+
+    // Create user message for chat log
+    const userMsgId = `usr_${Date.now()}`;
+    const userMsg: ChatMessage = {
+      id: userMsgId,
+      role: 'user',
+      text: promptText || 'Análisis fotográfico de componentes/tablero.',
+      images: uploadedPhotos.map((p) => ({ id: p.id, name: p.name, dataUrl: p.dataUrl })),
+      installationType,
+      missingTools: selectedMissingTools.length > 0 ? [...selectedMissingTools] : undefined,
+      timestamp: new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }),
+    };
+
+    setMessages((prev) => [...prev, userMsg]);
     setLoading(true);
-    setAnalysisResult(null);
+
+    // Prepare current images payload
+    const currentImagesBase64 = uploadedPhotos.map((p) => p.dataUrl);
+
+    // Clear current inputs for smooth chat flow
+    setFaultDescription('');
+    setUploadedPhotos([]);
 
     try {
-      const imagesBase64 = uploadedPhotos.map((p) => p.dataUrl);
+      // Build server chat history parameter from existing messages
+      const chatHistoryPayload = messages.map((m) => ({
+        role: m.role,
+        text: m.text,
+      }));
 
       const res = await fetch('/api/diagnostic-consultant', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          faultDescription: faultDescription || 'Inspección de imágenes adjuntas del tablero/falla.',
+          faultDescription: promptText || 'Inspección de imágenes adjuntas.',
           installationType,
           missingTools: selectedMissingTools,
           contextNotes: customContext,
           userEmail: currentUser.email,
-          customGeminiApiKey: currentUser.customGeminiApiKey,
-          imagesBase64,
+          customGeminiApiKey: activeApiKey,
+          imagesBase64: currentImagesBase64,
+          chatHistory: chatHistoryPayload,
         }),
       });
 
       const data = await res.json();
+
       if (data.analysis) {
-        setAnalysisResult(data.analysis);
+        const modelMsg: ChatMessage = {
+          id: `ai_${Date.now()}`,
+          role: 'model',
+          text: data.analysis,
+          timestamp: new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }),
+        };
+        setMessages((prev) => [...prev, modelMsg]);
       } else if (data.error) {
-        setAnalysisResult(`❌ Error en la consulta: ${data.error}`);
+        setErrorMessage(data.error);
+        if (data.error.includes('cuota') || data.error.includes('API Key')) {
+          setShowApiKeyNotice(true);
+        }
+        const errorMsg: ChatMessage = {
+          id: `err_${Date.now()}`,
+          role: 'model',
+          text: `⚠️ **Aviso del Sistema:** ${data.error}`,
+          timestamp: new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }),
+          isError: true,
+        };
+        setMessages((prev) => [...prev, errorMsg]);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      setAnalysisResult('❌ Ocurrió un fallo de conexión. Verifique su red e intente nuevamente.');
+      const connErrText = '❌ Ocurrió un fallo de conexión. Verifique su red de datos e intente nuevamente.';
+      setErrorMessage(connErrText);
+      const errorMsg: ChatMessage = {
+        id: `err_${Date.now()}`,
+        role: 'model',
+        text: connErrText,
+        timestamp: new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }),
+        isError: true,
+      };
+      setMessages((prev) => [...prev, errorMsg]);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleCopy = () => {
-    if (!analysisResult) return;
-    navigator.clipboard.writeText(analysisResult);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const handleCopyMessage = (msgId: string, text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedId(msgId);
+    setTimeout(() => setCopiedId(null), 2000);
   };
 
-  const handleShareWhatsApp = () => {
-    if (!analysisResult) return;
+  const handleShareWhatsApp = (textToShare: string) => {
     const text = encodeURIComponent(
-      `⚡ *CONSULTA & DIAGNÓSTICO FOTOGRÁFICO NEOVOLT SEC* ⚡\n\n*Falla Reportada:* ${
-        faultDescription || 'Inspección Fotográfica de Tablero'
-      }\n\n${analysisResult}`
+      `⚡ *CONSULTA & DIAGNÓSTICO ELÉCTRICO NEOVOLT SEC* ⚡\n\n${textToShare}`
     );
     window.open(`https://wa.me/?text=${text}`, '_blank');
   };
@@ -292,21 +400,33 @@ export const AiDiagnosticConsultantTab: React.FC<AiDiagnosticConsultantTabProps>
         <div className="space-y-1 relative z-10">
           <div className="flex items-center gap-2 text-fuchsia-400 text-xs font-extrabold uppercase tracking-wider">
             <Sparkles className="w-4 h-4 animate-pulse text-fuchsia-400" />
-            <span>Consultor IA Multimodal Gemini 3.6 • Reconocimiento Fotográfico SEC</span>
+            <span>Consultor IA Multimodal Gemini 2.5 Flash • Asistente SEC Chile</span>
           </div>
           <h2 className="text-xl md:text-2xl font-black text-white flex items-center gap-3">
-            <span>Consultor Eléctrico IA & Análisis de Fotos</span>
+            <span>Consultor Técnico Eléctrico & Chat Multimodal</span>
             <span className="text-xs bg-fuchsia-500/20 text-fuchsia-300 border border-fuchsia-500/30 px-2.5 py-1 rounded-full font-mono">
-              Fotos + Visión IA
+              Visión + Conversación
             </span>
           </h2>
           <p className="text-xs text-slate-400 max-w-2xl">
-            Sube fotos de tableros, disyuntores quemados o fallas en terreno. Gemini analizará la imagen, la física del problema y las exigencias de los pliegos normativos RIC N°01-11.
+            Sube fotos de tableros, disyuntores o fallas en terreno y conversa con la IA. Recibe diagnósticos normativos rigurosos según Pliegos RIC N°01-11.
           </p>
         </div>
 
-        {/* User Chip */}
+        {/* User Account & Action Buttons */}
         <div className="flex items-center gap-2 shrink-0 relative z-10">
+          {messages.length > 0 && (
+            <button
+              type="button"
+              onClick={handleClearChat}
+              className="flex items-center gap-2 bg-slate-800 hover:bg-rose-900/40 text-slate-300 hover:text-rose-300 border border-slate-700 hover:border-rose-700/50 px-3.5 py-2.5 rounded-2xl text-xs font-semibold shadow transition-all"
+              title="Iniciar una consulta limpia"
+            >
+              <PlusCircle className="w-4 h-4 text-slate-400 group-hover:text-rose-400" />
+              <span className="hidden sm:inline">Nueva Consulta</span>
+            </button>
+          )}
+
           <button
             onClick={() => setIsAccountModalOpen(true)}
             className="flex items-center gap-2.5 bg-slate-800/90 hover:bg-slate-700 text-slate-200 border border-slate-700 px-4 py-2.5 rounded-2xl text-xs font-semibold shadow transition-all group"
@@ -319,30 +439,61 @@ export const AiDiagnosticConsultantTab: React.FC<AiDiagnosticConsultantTabProps>
               </div>
             </div>
             <span className="text-[10px] bg-fuchsia-600/30 text-fuchsia-300 px-2 py-0.5 rounded-md font-mono ml-1">
-              Configurar
+              API Key
             </span>
           </button>
         </div>
       </div>
 
+      {/* Optional Gemini API Key Banner if quota error occurs or explicitly requested */}
+      {showApiKeyNotice && (
+        <div className="bg-amber-950/40 border border-amber-800/60 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-fadeIn">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+            <div className="text-xs space-y-1">
+              <span className="font-bold text-amber-300 block">Ingresa tu API Key de Google Gemini (Opcional)</span>
+              <p className="text-amber-200/80">
+                Puedes ingresar tu propia API Key de Google AI Studio si el servidor alcanza su límite temporal de cuota.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <input
+              type="password"
+              placeholder="AIzaSy..."
+              value={apiKeyInput}
+              onChange={(e) => setApiKeyInput(e.target.value)}
+              className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white font-mono placeholder-slate-500 focus:outline-none focus:border-amber-400 w-44"
+            />
+            <button
+              onClick={handleSaveApiKeyInline}
+              className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs px-3 py-1.5 rounded-xl shadow transition-all"
+            >
+              Guardar
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Main Grid Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left Column: Form Controls & Photo Uploader (7 cols) */}
-        <div className="lg:col-span-7 space-y-6">
-          {/* Quick Preset Selector */}
+        {/* Left Column: Quick Preset Templates & Tool Settings (4 cols on lg) */}
+        <div className="lg:col-span-4 space-y-5">
+          {/* Preset Fault Templates */}
           <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 space-y-3 shadow-md">
             <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
               <HelpCircle className="w-4 h-4 text-fuchsia-400" />
-              <span>Plantillas Rápidas & Ejemplos con Fotografía</span>
+              <span>Plantillas Rápidas & Casos Frecuentes</span>
             </h3>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div className="space-y-2">
               {commonFaultTemplates.map((tpl, i) => (
                 <button
                   key={i}
                   type="button"
                   onClick={() => handleSelectTemplate(tpl)}
-                  className="text-left bg-slate-950 hover:bg-slate-800/80 border border-slate-800 hover:border-fuchsia-500/50 p-3 rounded-2xl transition-all group space-y-1"
+                  className="w-full text-left bg-slate-950 hover:bg-slate-800/80 border border-slate-800 hover:border-fuchsia-500/50 p-3 rounded-2xl transition-all group space-y-1"
                 >
                   <div className="text-xs font-bold text-slate-200 group-hover:text-fuchsia-300 truncate">
                     {tpl.title}
@@ -355,118 +506,20 @@ export const AiDiagnosticConsultantTab: React.FC<AiDiagnosticConsultantTabProps>
             </div>
           </div>
 
-          {/* Diagnostic Query Form */}
-          <form onSubmit={handleRunDiagnostic} className="bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-5 shadow-xl">
-            {/* PHOTO UPLOAD SECTION */}
-            <div className="space-y-3 bg-slate-950 p-4 rounded-2xl border border-slate-800">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-extrabold text-white flex items-center gap-2 uppercase tracking-wider">
-                  <Camera className="w-4 h-4 text-fuchsia-400" />
-                  <span>Subir o Tomar Fotos de la Falla / Tablero (Opcional - Hasta 4)</span>
-                </label>
-                <span className="text-[11px] text-slate-400 font-mono">
-                  {uploadedPhotos.length} / 4 adjuntas
-                </span>
-              </div>
+          {/* Installation Context Controls */}
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 space-y-4 shadow-md">
+            <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+              <Wrench className="w-4 h-4 text-fuchsia-400" />
+              <span>Parámetros de la Obra / Terreno</span>
+            </h3>
 
-              {/* Upload Drop Zone / Camera Trigger */}
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  onClick={() => cameraInputRef.current?.click()}
-                  className="bg-fuchsia-950/40 hover:bg-fuchsia-900/60 border border-fuchsia-800/50 hover:border-fuchsia-500 text-fuchsia-200 p-3 rounded-2xl text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-sm"
-                >
-                  <Camera className="w-4 h-4 text-fuchsia-400" />
-                  <span>Tomar Foto con Cámara</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-slate-600 text-slate-200 p-3 rounded-2xl text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-sm"
-                >
-                  <Upload className="w-4 h-4 text-slate-400" />
-                  <span>Subir Imagen de Galería</span>
-                </button>
-
-                {/* Hidden Native File Inputs */}
-                <input
-                  ref={cameraInputRef}
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  className="hidden"
-                  onChange={(e) => handlePhotoFilesSelected(e.target.files)}
-                />
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  className="hidden"
-                  onChange={(e) => handlePhotoFilesSelected(e.target.files)}
-                />
-              </div>
-
-              {/* Uploaded Photos Thumbnails Preview */}
-              {uploadedPhotos.length > 0 && (
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
-                  {uploadedPhotos.map((photo) => (
-                    <div key={photo.id} className="relative group bg-slate-900 rounded-xl overflow-hidden border border-slate-700 shadow-md">
-                      <img src={photo.dataUrl} alt={photo.name} className="w-full h-24 object-cover" />
-                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                        <button
-                          type="button"
-                          onClick={() => handleRemovePhoto(photo.id)}
-                          className="bg-rose-600 text-white p-1.5 rounded-full shadow hover:bg-rose-500 transition-transform"
-                          title="Eliminar foto"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                      <div className="p-1 bg-slate-900/90 text-[9px] text-slate-300 font-mono truncate text-center">
-                        {photo.name} ({photo.sizeKb} KB)
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Description Textarea */}
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="block text-xs font-bold text-slate-300">
-                  Descripción de la Falla o Consulta Técnica:
-                </label>
-                <button
-                  type="button"
-                  onClick={toggleVoiceRecognition}
-                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold transition-all ${
-                    isListening ? 'bg-rose-500/20 text-rose-400 border border-rose-500/50 animate-pulse' : 'bg-slate-800 text-slate-400 border border-slate-700 hover:text-fuchsia-400'
-                  }`}
-                  title="Dictar por voz"
-                >
-                  {isListening ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
-                  <span>{isListening ? 'Escuchando...' : 'Dictar'}</span>
-                </button>
-              </div>
-              <textarea
-                rows={3}
-                value={faultDescription}
-                onChange={(e) => setFaultDescription(e.target.value)}
-                placeholder="Ejemplo: Salta el diferencial RCD de 30mA cada vez que se enciende el aire acondicionado. Adjunto foto del tablero para ver la disposición de automáticos..."
-                className="w-full bg-slate-800 border border-slate-700 rounded-2xl p-3.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-fuchsia-500 shadow-inner"
-              />
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+            <div className="space-y-3 text-xs">
               <div>
                 <label className="block font-semibold text-slate-400 mb-1">Tipo de Instalación</label>
                 <select
                   value={installationType}
                   onChange={(e) => setInstallationType(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-fuchsia-500"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-fuchsia-500"
                 >
                   <option value="Monofásica 220V Residencial">Monofásica 220V Residencial</option>
                   <option value="Monofásica 220V Comercial">Monofásica 220V Comercial</option>
@@ -481,143 +534,299 @@ export const AiDiagnosticConsultantTab: React.FC<AiDiagnosticConsultantTabProps>
                   type="text"
                   value={customContext}
                   onChange={(e) => setCustomContext(e.target.value)}
-                  placeholder="Ej: Casa antigua con cableado NYA sin tierra"
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-fuchsia-500"
+                  placeholder="Ej: Tablero de madera sin aislamiento"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-fuchsia-500"
                 />
               </div>
-            </div>
 
-            {/* Missing Tools Checklist */}
-            <div className="space-y-2 pt-2 border-t border-slate-800">
-              <label className="block text-xs font-bold text-amber-400 flex items-center gap-1.5">
-                <AlertTriangle className="w-3.5 h-3.5" />
-                <span>¿Qué instrumentos NO tienes a mano en la obra?</span>
-              </label>
-              <p className="text-[11px] text-slate-400">
-                Selecciona los equipos que te faltan. Gemini te entregará un procedimiento seguro de descarte metódico en terreno sin ellos.
-              </p>
+              {/* Missing Tools Checklist */}
+              <div className="space-y-2 pt-2 border-t border-slate-800">
+                <label className="block text-xs font-bold text-amber-400 flex items-center gap-1.5">
+                  <AlertTriangle className="w-3.5 h-3.5" />
+                  <span>¿Qué instrumentos NO tienes a mano?</span>
+                </label>
 
-              <div className="flex flex-wrap gap-2 pt-1">
-                {availableMissingToolOptions.map((tool, idx) => {
-                  const isChecked = selectedMissingTools.includes(tool);
-                  return (
-                    <button
-                      key={idx}
-                      type="button"
-                      onClick={() => toggleMissingTool(tool)}
-                      className={`text-xs px-2.5 py-1.5 rounded-xl font-medium transition-all flex items-center gap-1.5 border ${
-                        isChecked
-                          ? 'bg-amber-500/20 border-amber-500/50 text-amber-300'
-                          : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
-                      }`}
-                    >
-                      <span>{isChecked ? '✕ No la tengo:' : '+'}</span>
-                      <span>{tool}</span>
-                    </button>
-                  );
-                })}
+                <div className="flex flex-wrap gap-1.5">
+                  {availableMissingToolOptions.map((tool, idx) => {
+                    const isChecked = selectedMissingTools.includes(tool);
+                    return (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => toggleMissingTool(tool)}
+                        className={`text-[11px] px-2.5 py-1 rounded-xl font-medium transition-all flex items-center gap-1 border ${
+                          isChecked
+                            ? 'bg-amber-500/20 border-amber-500/50 text-amber-300'
+                            : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
+                        }`}
+                      >
+                        <span>{isChecked ? '✕ Sin:' : '+'}</span>
+                        <span className="truncate max-w-[180px]">{tool}</span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </div>
-
-            {/* Submit Action Button */}
-            <div className="pt-2">
-              <button
-                type="submit"
-                disabled={loading || (!faultDescription.trim() && uploadedPhotos.length === 0)}
-                className="w-full bg-gradient-to-r from-fuchsia-600 to-indigo-600 hover:from-fuchsia-500 hover:to-indigo-500 disabled:opacity-50 text-white font-extrabold text-xs py-3.5 rounded-2xl shadow-lg transition-all flex items-center justify-center gap-2"
-              >
-                {loading ? (
-                  <>
-                    <RefreshCw className="w-4 h-4 animate-spin" />
-                    <span>Analizando imagen y Normativa RIC...</span>
-                  </>
-                ) : (
-                  <>
-                    <Send className="w-4 h-4" />
-                    <span>Generar Dictamen & Análisis Fotográfico</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </form>
+          </div>
         </div>
 
-        {/* Right Column: AI Output Display (5 cols) */}
-        <div className="lg:col-span-5 space-y-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4 min-h-[500px] flex flex-col justify-between">
-            <div className="space-y-4">
-              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-                <h3 className="text-xs font-extrabold text-white uppercase tracking-wider flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-fuchsia-400" />
-                  <span>Dictamen del Consultor IA Gemini</span>
-                </h3>
-
-                {analysisResult && (
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      onClick={() => alert('Dictamen guardado en el Proyecto Actual exitosamente.')}
-                      className="p-2 bg-indigo-600/20 text-indigo-400 hover:bg-indigo-600/30 rounded-xl text-xs flex items-center gap-1 border border-indigo-500/30"
-                      title="Guardar en el Proyecto Actual"
-                    >
-                      <Save className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={handleCopy}
-                      className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs flex items-center gap-1"
-                      title="Copiar dictamen"
-                    >
-                      {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
-                    </button>
-                    <button
-                      onClick={handleShareWhatsApp}
-                      className="p-2 bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30 rounded-xl text-xs flex items-center gap-1 border border-emerald-500/30"
-                      title="Enviar Informe por WhatsApp"
-                    >
-                      <Share2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                )}
+        {/* Right Column: Conversational Interactive Chat Feed (8 cols on lg) */}
+        <div className="lg:col-span-8 flex flex-col h-[680px] bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl">
+          {/* Chat Header Bar */}
+          <div className="bg-slate-950/80 px-6 py-4 border-b border-slate-800 flex items-center justify-between shrink-0">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-2xl bg-fuchsia-600/20 border border-fuchsia-500/30 flex items-center justify-center text-fuchsia-400 shadow-inner">
+                <Bot className="w-5 h-5" />
               </div>
-
-              {loading ? (
-                <div className="py-20 text-center space-y-4">
-                  <div className="relative w-16 h-16 mx-auto">
-                    <div className="w-16 h-16 border-4 border-fuchsia-500 border-t-transparent rounded-full animate-spin"></div>
-                    <Sparkles className="w-6 h-6 text-fuchsia-400 absolute inset-0 m-auto animate-pulse" />
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-xs font-bold text-slate-200">Procesando imágenes y física de la falla...</p>
-                    <p className="text-[11px] text-slate-400">Verificando pliegos de la normativa SEC RIC N°01-11.</p>
-                  </div>
-                </div>
-              ) : analysisResult ? (
-                <div className="bg-slate-950 p-4.5 rounded-2xl border border-slate-800 text-xs text-slate-200 font-mono leading-relaxed overflow-y-auto max-h-[580px] scrollbar-thin markdown-body">
-                  <Markdown>{analysisResult}</Markdown>
-                </div>
-              ) : (
-                <div className="bg-slate-950 p-10 rounded-2xl border border-slate-800/80 text-center space-y-4 text-slate-400">
-                  <div className="w-14 h-14 bg-slate-900 rounded-2xl flex items-center justify-center mx-auto text-fuchsia-400 border border-slate-800 shadow-inner">
-                    <Camera className="w-7 h-7" />
-                  </div>
-                  <div className="space-y-1">
-                    <h4 className="text-xs font-bold text-slate-200">Aún no has realizado una consulta</h4>
-                    <p className="text-[11px] text-slate-400 max-w-xs mx-auto">
-                      Toma una foto del tablero o describe el problema eléctrico a la izquierda para recibir la auditoría en tiempo real.
-                    </p>
-                  </div>
-                </div>
-              )}
+              <div>
+                <h3 className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-2">
+                  <span>Consultor IA Gemini SEC Chile</span>
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+                </h3>
+                <p className="text-[10px] text-slate-400">
+                  Respuesta inmediata con análisis técnico de fotos y pliegos RIC
+                </p>
+              </div>
             </div>
 
-            {/* Footer */}
-            <div className="pt-3 border-t border-slate-800 text-[10px] text-slate-500 flex items-center justify-between">
-              <span>Cuenta: <strong className="text-slate-300">{currentUser.email || 'ineovolt@gmail.com'}</strong></span>
-              <span className="font-bold text-emerald-400 flex items-center gap-1">
-                <ShieldCheck className="w-3.5 h-3.5" />
-                <span>RIC SEC Chile</span>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-mono bg-slate-800 text-slate-300 px-2.5 py-1 rounded-lg border border-slate-700">
+                {installationType}
               </span>
             </div>
           </div>
+
+          {/* Chat Messages Log Scrollable Container */}
+          <div className="flex-1 p-6 overflow-y-auto space-y-6 scrollbar-thin">
+            {messages.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center text-center p-8 space-y-4 text-slate-400">
+                <div className="w-16 h-16 bg-slate-950 rounded-3xl border border-slate-800 flex items-center justify-center text-fuchsia-400 shadow-2xl">
+                  <Camera className="w-8 h-8" />
+                </div>
+                <div className="space-y-1.5 max-w-sm">
+                  <h4 className="text-sm font-bold text-white">Inicia la Consulta Técnica o Sube Fotos</h4>
+                  <p className="text-xs text-slate-400">
+                    Escribe tu inquietud eléctrica o adjunta imágenes de tableros, disyuntores quemados o fallas en el campo de texto inferior.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              messages.map((msg) => (
+                <div
+                  key={msg.id}
+                  className={`flex gap-3.5 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                >
+                  {/* Bot Avatar for AI responses */}
+                  {msg.role === 'model' && (
+                    <div className="w-8 h-8 rounded-2xl bg-fuchsia-600/20 border border-fuchsia-500/40 flex items-center justify-center text-fuchsia-400 shrink-0 mt-1">
+                      <Bot className="w-4 h-4" />
+                    </div>
+                  )}
+
+                  {/* Message Content Bubble */}
+                  <div
+                    className={`max-w-[85%] rounded-3xl p-4 space-y-3 text-xs leading-relaxed shadow-lg ${
+                      msg.role === 'user'
+                        ? 'bg-fuchsia-950/80 text-fuchsia-100 border border-fuchsia-800/60 rounded-tr-sm'
+                        : msg.isError
+                        ? 'bg-rose-950/60 text-rose-200 border border-rose-800/80 rounded-tl-sm'
+                        : 'bg-slate-950 text-slate-100 border border-slate-800 rounded-tl-sm'
+                    }`}
+                  >
+                    {/* User Sent Images Thumbnails */}
+                    {msg.images && msg.images.length > 0 && (
+                      <div className="grid grid-cols-2 gap-2 pb-2 border-b border-fuchsia-800/40">
+                        {msg.images.map((img) => (
+                          <div key={img.id} className="rounded-xl overflow-hidden border border-fuchsia-700/50 bg-black/40">
+                            <img src={img.dataUrl} alt={img.name} className="w-full h-24 object-cover" />
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Message Body */}
+                    {msg.role === 'model' ? (
+                      <div className="markdown-body text-xs font-mono text-slate-200">
+                        <Markdown>{msg.text}</Markdown>
+                      </div>
+                    ) : (
+                      <p className="whitespace-pre-wrap font-sans text-xs">{msg.text}</p>
+                    )}
+
+                    {/* User Metadata Tags */}
+                    {msg.role === 'user' && msg.missingTools && msg.missingTools.length > 0 && (
+                      <div className="pt-2 border-t border-fuchsia-800/30 flex flex-wrap gap-1">
+                        <span className="text-[10px] text-amber-300 font-bold">Sin instrumentos:</span>
+                        {msg.missingTools.map((tool, idx) => (
+                          <span key={idx} className="text-[9px] bg-amber-500/20 text-amber-200 px-2 py-0.5 rounded-md font-mono">
+                            {tool}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Bottom Toolbar for AI Messages */}
+                    <div className="flex items-center justify-between text-[10px] text-slate-400 pt-1 border-t border-slate-800/60">
+                      <span className="font-mono">{msg.timestamp}</span>
+
+                      {msg.role === 'model' && !msg.isError && (
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => handleCopyMessage(msg.id, msg.text)}
+                            className="p-1.5 hover:bg-slate-800 text-slate-300 rounded-lg transition-colors flex items-center gap-1"
+                            title="Copiar texto"
+                          >
+                            {copiedId === msg.id ? (
+                              <Check className="w-3.5 h-3.5 text-emerald-400" />
+                            ) : (
+                              <Copy className="w-3.5 h-3.5" />
+                            )}
+                          </button>
+                          <button
+                            onClick={() => handleShareWhatsApp(msg.text)}
+                            className="p-1.5 hover:bg-emerald-950/50 text-emerald-400 rounded-lg transition-colors flex items-center gap-1"
+                            title="Compartir por WhatsApp"
+                          >
+                            <Share2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* User Avatar */}
+                  {msg.role === 'user' && (
+                    <div className="w-8 h-8 rounded-2xl bg-slate-800 border border-slate-700 flex items-center justify-center text-fuchsia-300 shrink-0 mt-1">
+                      <UserCheck className="w-4 h-4" />
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
+
+            {/* Thinking / Analyzing Animated Loader */}
+            {loading && (
+              <div className="flex gap-3.5 justify-start">
+                <div className="w-8 h-8 rounded-2xl bg-fuchsia-600/20 border border-fuchsia-500/40 flex items-center justify-center text-fuchsia-400 shrink-0 mt-1">
+                  <Bot className="w-4 h-4 animate-spin" />
+                </div>
+                <div className="bg-slate-950 border border-slate-800 rounded-3xl rounded-tl-sm p-4 space-y-2 text-xs text-slate-300 max-w-xs shadow-lg">
+                  <div className="flex items-center gap-2 text-fuchsia-400 font-bold">
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>Analizando imagen y normativa SEC...</span>
+                  </div>
+                  <p className="text-[11px] text-slate-400">
+                    Verificando parámetros de seguridad y física de fallas.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            <div ref={chatBottomRef} />
+          </div>
+
+          {/* Bottom Attached Photos Thumbnails Preview bar */}
+          {uploadedPhotos.length > 0 && (
+            <div className="bg-slate-950/90 border-t border-slate-800 p-3 px-6 flex items-center gap-3 overflow-x-auto">
+              <span className="text-[10px] text-fuchsia-400 font-extrabold uppercase shrink-0">
+                Fotos a enviar ({uploadedPhotos.length}/4):
+              </span>
+              <div className="flex items-center gap-2">
+                {uploadedPhotos.map((photo) => (
+                  <div key={photo.id} className="relative group shrink-0 rounded-lg overflow-hidden border border-slate-700 w-12 h-12">
+                    <img src={photo.dataUrl} alt={photo.name} className="w-full h-full object-cover" />
+                    <button
+                      type="button"
+                      onClick={() => handleRemovePhoto(photo.id)}
+                      className="absolute inset-0 bg-rose-950/80 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                      title="Eliminar foto"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 text-rose-300" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Interactive Chat Input Controls Form */}
+          <form onSubmit={handleSendQuery} className="bg-slate-950 p-4 border-t border-slate-800 space-y-3">
+            <div className="flex items-center gap-2">
+              {/* Camera Trigger */}
+              <button
+                type="button"
+                onClick={() => cameraInputRef.current?.click()}
+                className="p-3 bg-slate-900 hover:bg-slate-800 border border-slate-700 hover:border-fuchsia-500 text-fuchsia-400 rounded-2xl transition-all shadow shrink-0"
+                title="Tomar foto con cámara"
+              >
+                <Camera className="w-4 h-4" />
+              </button>
+
+              {/* Gallery Trigger */}
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="p-3 bg-slate-900 hover:bg-slate-800 border border-slate-700 hover:border-fuchsia-500 text-slate-300 rounded-2xl transition-all shadow shrink-0"
+                title="Subir foto de galería"
+              >
+                <Upload className="w-4 h-4" />
+              </button>
+
+              {/* Hidden File Inputs */}
+              <input
+                ref={cameraInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={(e) => handlePhotoFilesSelected(e.target.files)}
+              />
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                className="hidden"
+                onChange={(e) => handlePhotoFilesSelected(e.target.files)}
+              />
+
+              {/* Text Input Area */}
+              <div className="relative flex-1">
+                <input
+                  type="text"
+                  value={faultDescription}
+                  onChange={(e) => setFaultDescription(e.target.value)}
+                  placeholder={
+                    messages.length > 0
+                      ? 'Haz una repregunta o aclara detalles...'
+                      : 'Describe la falla o pregunta sobre la foto...'
+                  }
+                  className="w-full bg-slate-900 border border-slate-700 rounded-2xl py-3 pl-4 pr-10 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-fuchsia-500 shadow-inner"
+                />
+
+                <button
+                  type="button"
+                  onClick={toggleVoiceRecognition}
+                  className={`absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-full transition-colors ${
+                    isListening ? 'text-rose-400 animate-pulse' : 'text-slate-400 hover:text-fuchsia-400'
+                  }`}
+                  title="Dictar por voz"
+                >
+                  {isListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+                </button>
+              </div>
+
+              {/* Send Button */}
+              <button
+                type="submit"
+                disabled={loading || (!faultDescription.trim() && uploadedPhotos.length === 0)}
+                className="p-3 bg-gradient-to-r from-fuchsia-600 to-indigo-600 hover:from-fuchsia-500 hover:to-indigo-500 disabled:opacity-40 text-white rounded-2xl shadow-lg transition-all shrink-0 flex items-center justify-center font-bold"
+              >
+                {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+              </button>
+            </div>
+          </form>
         </div>
       </div>
 
@@ -640,7 +849,7 @@ export const AiDiagnosticConsultantTab: React.FC<AiDiagnosticConsultantTabProps>
 
             <form onSubmit={handleSaveAccountSwitch} className="space-y-3.5 text-xs">
               <div>
-                <label className="block text-slate-400 mb-1 font-semibold">Correo Electrónico (Cualquier cuenta):</label>
+                <label className="block text-slate-400 mb-1 font-semibold">Correo Electrónico:</label>
                 <input
                   type="email"
                   required
@@ -670,8 +879,8 @@ export const AiDiagnosticConsultantTab: React.FC<AiDiagnosticConsultantTabProps>
                 <input
                   type="password"
                   placeholder="AIzaSy... (Dejar en blanco para usar la del servidor)"
-                  value={customApiKey}
-                  onChange={(e) => setCustomApiKey(e.target.value)}
+                  value={customApiKeyModal}
+                  onChange={(e) => setCustomApiKeyModal(e.target.value)}
                   className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2.5 text-white font-mono focus:outline-none focus:border-fuchsia-500"
                 />
                 <span className="text-[10px] text-slate-500 mt-1 block">

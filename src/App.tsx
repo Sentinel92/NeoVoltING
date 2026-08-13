@@ -1394,6 +1394,10 @@ export default function App() {
                       contractor={contractor}
                       rooms={rooms}
                       highAppliances={highAppliances}
+                      feederLength={feederLength}
+                      isThreePhase={isThreePhase}
+                      feederWireSection={feederWireSection}
+                      customGeminiApiKey={user.customGeminiApiKey}
                     />
                   );
 

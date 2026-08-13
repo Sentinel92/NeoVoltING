@@ -32,7 +32,36 @@ import {
   Image as ImageIcon,
   Award,
   Table,
+  HelpCircle,
+  BarChart3,
+  PieChart,
+  Activity,
+  TrendingUp,
+  Gauge,
+  Power,
+  Wrench,
+  Lightbulb,
+  Volume2,
+  VolumeX,
+  PlusCircle,
+  MinusCircle,
+  Move,
+  Terminal,
+  SlidersHorizontal,
+  Trash2,
 } from 'lucide-react';
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip as RechartsTooltip,
+  Legend,
+  CartesianGrid,
+  ReferenceLine,
+  Cell,
+} from 'recharts';
 import { downloadPdfFromElement } from '../utils/pdfGenerator';
 
 interface SingleLineCanvasRendererProps {
@@ -406,6 +435,1224 @@ export const SingleLineCanvasRenderer: React.FC<SingleLineCanvasRendererProps> =
   );
 };
 
+export const TRIP_CURVE_INFO: Record<
+  string,
+  {
+    name: string;
+    range: string;
+    loadType: 'resistiva' | 'general' | 'inductiva';
+    loadTypeLabel: string;
+    badgeBg: string;
+    badgeText: string;
+    badgeBorder: string;
+    description: string;
+    applications: string;
+    secRule: string;
+  }
+> = {
+  'Curva B': {
+    name: 'Curva B',
+    range: '3 In - 5 In',
+    loadType: 'resistiva',
+    loadTypeLabel: 'Cargas Resistivas / Conductor Largo',
+    badgeBg: 'bg-amber-500/20',
+    badgeText: 'text-amber-300',
+    badgeBorder: 'border-amber-500/40',
+    description: 'Disparo magnético ultrarrápido (3 a 5 veces la corriente nominal In).',
+    applications: 'Termoeléctricos, calefacción resistiva puramente óhmica, iluminación incandescente y alimentadores extensos.',
+    secRule: 'Evita sobrecalentamiento rápido en líneas largas y protege circuitos sin picos de inercia.',
+  },
+  'Curva C': {
+    name: 'Curva C',
+    range: '5 In - 10 In',
+    loadType: 'general',
+    loadTypeLabel: 'Cargas Generales Domiciliarias / Comerciales',
+    badgeBg: 'bg-emerald-500/20',
+    badgeText: 'text-emerald-300',
+    badgeBorder: 'border-emerald-500/40',
+    description: 'Disparo magnético estándar (5 a 10 veces la corriente nominal In).',
+    applications: 'Alumbrado LED/Fluorescente, enchufes de uso general, electrodomésticos convencionales y oficinas.',
+    secRule: 'Curva estándar reglamentaria según pliegos RIC SEC N°05. Soporta transitorios leves de encendido.',
+  },
+  'Curva D': {
+    name: 'Curva D',
+    range: '10 In - 20 In',
+    loadType: 'inductiva',
+    loadTypeLabel: 'Cargas Inductivas / Motores / Clima',
+    badgeBg: 'bg-purple-500/20',
+    badgeText: 'text-purple-300',
+    badgeBorder: 'border-purple-500/40',
+    description: 'Disparo magnético retardado (10 a 20 veces la corriente nominal In).',
+    applications: 'Motores eléctricos, bombas de agua, compresores de aire acondicionado / HVAC, transformadores de fuerza.',
+    secRule: 'Soporta picos de arranque del motor (hasta 7x In) evitando disparos intempestivos al encender.',
+  },
+};
+
+interface CircuitPowerBarChartProps {
+  circuits: Array<{
+    code: string;
+    name: string;
+    breaker: string;
+    wire: string;
+    pipe: string;
+    loadW: number;
+    rcdGroup: number;
+    amps: number;
+    curve: string;
+    breakingCapacity: string;
+  }>;
+  isThreePhase: boolean;
+  vNominal: number;
+}
+
+export const CircuitPowerBarChart: React.FC<CircuitPowerBarChartProps> = ({
+  circuits,
+  isThreePhase,
+  vNominal,
+}) => {
+  const chartData = circuits.map((cto, idx) => {
+    const nominalV = 220; // branch circuit voltage
+    const capacityW = (cto.amps || 16) * nominalV;
+    const utilization = Math.round((cto.loadW / Math.max(1, capacityW)) * 100);
+
+    let phaseName = 'Monofásico L1';
+    let phaseCode = 'L1';
+    if (isThreePhase) {
+      const pIdx = idx % 3;
+      if (pIdx === 0) {
+        phaseName = 'Fase R (L1)';
+        phaseCode = 'R';
+      } else if (pIdx === 1) {
+        phaseName = 'Fase S (L2)';
+        phaseCode = 'S';
+      } else {
+        phaseName = 'Fase T (L3)';
+        phaseCode = 'T';
+      }
+    }
+
+    return {
+      code: cto.code,
+      name: cto.name,
+      loadW: cto.loadW,
+      capacityW,
+      utilization,
+      amps: cto.amps,
+      curve: cto.curve || 'Curva C',
+      wire: cto.wire,
+      pipe: cto.pipe,
+      phaseName,
+      phaseCode,
+    };
+  });
+
+  const totalLoadW = circuits.reduce((sum, c) => sum + c.loadW, 0);
+  const totalCapacityW = chartData.reduce((sum, c) => sum + c.capacityW, 0);
+  const avgUtilization =
+    chartData.length > 0
+      ? Math.round(chartData.reduce((s, c) => s + c.utilization, 0) / chartData.length)
+      : 0;
+
+  const phaseR = chartData.filter((c) => c.phaseCode === 'R' || !isThreePhase);
+  const phaseS = chartData.filter((c) => c.phaseCode === 'S');
+  const phaseT = chartData.filter((c) => c.phaseCode === 'T');
+
+  const phaseRLoad = phaseR.reduce((s, c) => s + c.loadW, 0);
+  const phaseSLoad = phaseS.reduce((s, c) => s + c.loadW, 0);
+  const phaseTLoad = phaseT.reduce((s, c) => s + c.loadW, 0);
+
+  const phaseLoads = isThreePhase ? [phaseRLoad, phaseSLoad, phaseTLoad] : [phaseRLoad];
+  const maxPhaseLoad = Math.max(...phaseLoads);
+  const minPhaseLoad = Math.min(...phaseLoads);
+  const phaseImbalance =
+    isThreePhase && maxPhaseLoad > 0
+      ? Math.round(((maxPhaseLoad - minPhaseLoad) / maxPhaseLoad) * 100)
+      : 0;
+  const isPhaseImbalanced = isThreePhase && phaseImbalance > 15;
+
+  const CustomChartTooltip = ({ active, payload }: any) => {
+    if (active && payload && payload.length) {
+      const data = payload[0].payload;
+      const curveInfo = TRIP_CURVE_INFO[data.curve] || TRIP_CURVE_INFO['Curva C'];
+      return (
+        <div className="bg-slate-900 border-2 border-slate-700 p-3.5 rounded-2xl shadow-2xl text-xs space-y-2 text-white max-w-xs z-50">
+          <div className="flex items-center justify-between border-b border-slate-800 pb-1.5">
+            <span className="font-mono font-black text-emerald-400 text-sm">{data.code}</span>
+            <span className="font-bold text-slate-200 truncate max-w-[170px]">{data.name}</span>
+          </div>
+          <div className="space-y-1.5 text-[11px]">
+            <div className="flex justify-between">
+              <span className="text-slate-400">Potencia Real Carga:</span>
+              <span className="font-bold text-amber-300">{data.loadW} W</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Capacidad Disyuntor:</span>
+              <span className="font-bold text-indigo-300">{data.capacityW} W ({data.amps}A @ 220V)</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-slate-400">Factor de Carga:</span>
+              <span
+                className={`font-black font-mono px-1.5 py-0.5 rounded ${
+                  data.utilization > 100
+                    ? 'bg-rose-500/30 text-rose-300 border border-rose-500/50'
+                    : data.utilization > 80
+                    ? 'bg-amber-500/30 text-amber-300 border border-amber-500/50'
+                    : 'bg-emerald-500/30 text-emerald-300 border border-emerald-500/50'
+                }`}
+              >
+                {data.utilization}%
+              </span>
+            </div>
+            <div className="flex justify-between items-center pt-1 border-t border-slate-800">
+              <span className="text-slate-400">Curva Disparo:</span>
+              <span
+                className={`font-bold px-1.5 py-0.5 rounded text-[10px] ${curveInfo.badgeBg} ${curveInfo.badgeText} border ${curveInfo.badgeBorder}`}
+              >
+                {data.curve} ({curveInfo.range})
+              </span>
+            </div>
+            {isThreePhase && (
+              <div className="flex justify-between">
+                <span className="text-slate-400">Fase Asignada:</span>
+                <span className="font-bold text-emerald-400">{data.phaseName}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+    return null;
+  };
+
+  return (
+    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-5">
+      {/* Chart Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-500/40 text-indigo-400 flex items-center justify-center shrink-0">
+            <BarChart3 className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h3 className="text-sm font-black text-white uppercase tracking-wide">
+                Distribución de Potencia Real vs Capacidad de Disyuntores
+              </h3>
+              <span className="bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                Balanceo de Cargas SEC
+              </span>
+            </div>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Visualiza el consumo real en Watts (P_real) frente al límite térmico nominal del automático (1xIn × 220V).
+            </p>
+          </div>
+        </div>
+
+        {/* Metric Badges */}
+        <div className="flex items-center gap-2 flex-wrap text-xs">
+          <div className="bg-slate-950 px-3 py-1.5 rounded-xl border border-slate-800">
+            <span className="text-[10px] text-slate-400 block">Potencia Real Total</span>
+            <span className="font-black text-amber-400 font-mono">{(totalLoadW / 1000).toFixed(2)} kW ({totalLoadW}W)</span>
+          </div>
+          <div className="bg-slate-950 px-3 py-1.5 rounded-xl border border-slate-800">
+            <span className="text-[10px] text-slate-400 block">Capacidad Total TDA</span>
+            <span className="font-black text-indigo-300 font-mono">{(totalCapacityW / 1000).toFixed(2)} kW</span>
+          </div>
+          <div className="bg-slate-950 px-3 py-1.5 rounded-xl border border-slate-800">
+            <span className="text-[10px] text-slate-400 block">Uso Promedio Carga</span>
+            <span className={`font-black font-mono ${avgUtilization > 80 ? 'text-amber-400' : 'text-emerald-400'}`}>
+              {avgUtilization}%
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Phase Balancing Analysis (Trifásico) */}
+      {isThreePhase && (
+        <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Activity className="w-4 h-4 text-emerald-400" />
+              <span className="text-xs font-bold text-white uppercase tracking-wider">
+                Análisis de Balanceo de Fases (380V Trifásico - RIC N°03)
+              </span>
+            </div>
+            <span
+              className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${
+                isPhaseImbalanced
+                  ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                  : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+              }`}
+            >
+              {isPhaseImbalanced ? `Desbalance: ${phaseImbalance}% (>15% Máx SEC)` : `Desbalance OK: ${phaseImbalance}% (≤15%)`}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+            {/* Phase R */}
+            <div className="bg-slate-900 p-3 rounded-lg border border-slate-800 space-y-1">
+              <div className="flex items-center justify-between font-bold text-red-400">
+                <span>Fase R (L1)</span>
+                <span>{phaseR.length} circuitos</span>
+              </div>
+              <div className="text-base font-black text-white font-mono">{phaseRLoad} W</div>
+              <div className="text-[10px] text-slate-400">
+                {totalLoadW > 0 ? Math.round((phaseRLoad / totalLoadW) * 100) : 0}% de la carga total
+              </div>
+            </div>
+
+            {/* Phase S */}
+            <div className="bg-slate-900 p-3 rounded-lg border border-slate-800 space-y-1">
+              <div className="flex items-center justify-between font-bold text-amber-400">
+                <span>Fase S (L2)</span>
+                <span>{phaseS.length} circuitos</span>
+              </div>
+              <div className="text-base font-black text-white font-mono">{phaseSLoad} W</div>
+              <div className="text-[10px] text-slate-400">
+                {totalLoadW > 0 ? Math.round((phaseSLoad / totalLoadW) * 100) : 0}% de la carga total
+              </div>
+            </div>
+
+            {/* Phase T */}
+            <div className="bg-slate-900 p-3 rounded-lg border border-slate-800 space-y-1">
+              <div className="flex items-center justify-between font-bold text-indigo-400">
+                <span>Fase T (L3)</span>
+                <span>{phaseT.length} circuitos</span>
+              </div>
+              <div className="text-base font-black text-white font-mono">{phaseTLoad} W</div>
+              <div className="text-[10px] text-slate-400">
+                {totalLoadW > 0 ? Math.round((phaseTLoad / totalLoadW) * 100) : 0}% de la carga total
+              </div>
+            </div>
+          </div>
+
+          {isPhaseImbalanced && (
+            <div className="bg-rose-950/60 border border-rose-500/40 p-2.5 rounded-lg text-rose-200 text-xs flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+              <span>
+                <strong>Sugerencia de Rebalanceo:</strong> Redistribuye o reasigna circuitos de alta potencia para mantener un desbalance inferior al 15% entre fases R, S y T.
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Recharts Chart Visualization */}
+      <div className="h-72 w-full pt-2">
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={chartData} margin={{ top: 15, right: 15, left: 0, bottom: 25 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+            <XAxis dataKey="code" stroke="#94a3b8" tick={{ fill: '#cbd5e1', fontSize: 11, fontWeight: 'bold' }} />
+            <YAxis stroke="#94a3b8" tick={{ fill: '#cbd5e1', fontSize: 10 }} unit="W" />
+            <RechartsTooltip content={<CustomChartTooltip />} />
+            <Legend
+              wrapperStyle={{ paddingTop: '10px', fontSize: '11px', color: '#cbd5e1' }}
+              formatter={(value) => <span className="text-slate-300 font-semibold">{value}</span>}
+            />
+            <ReferenceLine y={2800} stroke="#f59e0b" strokeDasharray="4 4" label={{ value: 'Límite 80% continuo', fill: '#f59e0b', fontSize: 10, position: 'insideTopRight' }} />
+            <Bar dataKey="loadW" name="Potencia Real Carga (W)" radius={[6, 6, 0, 0]}>
+              {chartData.map((entry, index) => (
+                <Cell
+                  key={`cell-${index}`}
+                  fill={
+                    entry.utilization > 100
+                      ? '#f43f5e'
+                      : entry.utilization > 80
+                      ? '#f59e0b'
+                      : '#10b981'
+                  }
+                />
+              ))}
+            </Bar>
+            <Bar dataKey="capacityW" name="Capacidad Máx Disyuntor (W)" fill="#6366f1" opacity={0.35} radius={[6, 6, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* Quick Curve Legend Footnote */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px] bg-slate-950 p-3 rounded-xl border border-slate-800">
+        <div className="flex items-center gap-2">
+          <span className="w-2.5 h-2.5 rounded-full bg-amber-400 shrink-0"></span>
+          <div>
+            <strong className="text-amber-300">Curva B (3-5 In):</strong> <span className="text-slate-400">Cargas resistivas puras / líneas largas</span>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 shrink-0"></span>
+          <div>
+            <strong className="text-emerald-300">Curva C (5-10 In):</strong> <span className="text-slate-400">Cargas generales (alumbrado/enchufes)</span>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="w-2.5 h-2.5 rounded-full bg-purple-400 shrink-0"></span>
+          <div>
+            <strong className="text-purple-300">Curva D (10-20 In):</strong> <span className="text-slate-400">Cargas inductivas (motores/clima)</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/* ============================================================================
+   MÓDULO DE TABLERO 2D SIMULADOR FÍSICO INTERACTIVO (NORMA SEC)
+   ============================================================================ */
+interface Tablero2DSimulatorProps {
+  isThreePhase: boolean;
+  vNominal: number;
+  iga: { amps: number; curve: string; breakingCapacity: string; poles: string };
+  dps: { voltage: string; dischargeCurrent: string };
+  rcds: Record<number, { amps: number; sensitivity: string; classType: string }>;
+  circuits: Array<{
+    code: string;
+    name: string;
+    breaker: string;
+    wire: string;
+    pipe: string;
+    loadW: number;
+    rcdGroup: number;
+    amps: number;
+    curve: string;
+    breakingCapacity: string;
+  }>;
+  specs: CustomProtectionSpecs;
+  updateSpecsAndSync: (newSpecs: CustomProtectionSpecs, msg: string) => void;
+  showToast: (msg: string) => void;
+  feederWireSection: number;
+  feederLength: number;
+}
+
+export const Tablero2DSimulator: React.FC<Tablero2DSimulatorProps> = ({
+  isThreePhase,
+  vNominal,
+  iga,
+  dps,
+  rcds,
+  circuits,
+  specs,
+  updateSpecsAndSync,
+  showToast,
+}) => {
+  const [isEnergized, setIsEnergized] = useState(true);
+  const [isDoorClosed, setIsDoorClosed] = useState(false);
+  const [showWiringGuide, setShowWiringGuide] = useState(false);
+  const [showWiringVerifier, setShowWiringVerifier] = useState(false);
+  const [showComponentPalette, setShowComponentPalette] = useState(false);
+  const [rcdTrippedState, setRcdTrippedState] = useState<Record<number, boolean>>({});
+  const [mcbState, setMcbState] = useState<Record<string, boolean>>({});
+  const [customRailModules, setCustomRailModules] = useState<
+    Array<{ id: string; type: string; label: string; amps?: number; curve?: string }>
+  >([]);
+
+  const toggleEnergized = () => {
+    setIsEnergized((prev) => {
+      const next = !prev;
+      showToast(next ? '⚡ Tablero ENERGIZADO (Tensión activa 220V/380V)' : '🛑 Tablero DESENERGIZADO (Mantenimiento seguro)');
+      return next;
+    });
+  };
+
+  const handleRcdTest = (groupNum: number) => {
+    if (!isEnergized) {
+      showToast('⚠️ El tablero está desenergizado. Energízalo para probar el botón TEST del diferencial.');
+      return;
+    }
+    setRcdTrippedState((prev) => {
+      const isTripped = !prev[groupNum];
+      showToast(
+        isTripped
+          ? `⚡ DISPARO DE PRUEBA: RCD Grupo ${groupNum} ha abierto el circuito por fuga simulada (30mA ok).`
+          : `✓ RCD Grupo ${groupNum} rearmado correctamente.`
+      );
+      return { ...prev, [groupNum]: isTripped };
+    });
+  };
+
+  const toggleMcb = (code: string) => {
+    setMcbState((prev) => {
+      const current = prev[code] !== false;
+      const next = !current;
+      showToast(next ? `🔌 Circuito ${code} activado.` : `⏹️ Circuito ${code} desenergizado localmente.`);
+      return { ...prev, [code]: next };
+    });
+  };
+
+  const totalLoadW = circuits.reduce((s, c) => s + c.loadW, 0);
+  const currentAmpTotal = Math.round(totalLoadW / Math.max(1, vNominal));
+
+  const checks = [
+    {
+      id: 'pe',
+      title: 'Barra de Puesta a Tierra (PE) - RIC N°06',
+      status: 'pass' as const,
+      message: 'Barra de cobre PE conectada a masa metálica del gabinete y malla de tierra con R ≤ 20 Ω.',
+    },
+    {
+      id: 'neutral',
+      title: 'Aislamiento de Bornera de Neutro (N) - RIC N°03',
+      status: 'pass' as const,
+      message: 'Bornera de neutro independiente aislada de la estructura metálica con sección equivalente a fase.',
+    },
+    {
+      id: 'rcd_limit',
+      title: 'Límite de Circuitos por Protector Diferencial - RIC N°05',
+      status: (() => {
+        const counts: Record<number, number> = {};
+        circuits.forEach((c) => {
+          counts[c.rcdGroup] = (counts[c.rcdGroup] || 0) + 1;
+        });
+        const overflow = Object.values(counts).some((cnt) => cnt > 3);
+        return overflow ? ('fail' as const) : ('pass' as const);
+      })(),
+      message: (() => {
+        const counts: Record<number, number> = {};
+        circuits.forEach((c) => {
+          counts[c.rcdGroup] = (counts[c.rcdGroup] || 0) + 1;
+        });
+        const overflow = Object.values(counts).some((cnt) => cnt > 3);
+        return overflow
+          ? 'ALERTA SEC: Hay más de 3 circuitos derivados asignados a un solo interruptor diferencial.'
+          : 'Cumple RIC N°05: Máximo 3 circuitos derivados protegidos por cada interruptor diferencial.';
+      })(),
+    },
+    {
+      id: 'gauge_coordination',
+      title: 'Coordinación Térmica Conductor vs Disyuntor - RIC N°04',
+      status: (() => {
+        const mismatch = circuits.some((c) => {
+          const wireMm = parseFloat(c.wire);
+          if (isNaN(wireMm)) return false;
+          if (wireMm <= 1.5 && c.amps > 10) return true;
+          if (wireMm <= 2.5 && c.amps > 16) return true;
+          if (wireMm <= 4.0 && c.amps > 25) return true;
+          return false;
+        });
+        return mismatch ? ('fail' as const) : ('pass' as const);
+      })(),
+      message: (() => {
+        const mismatch = circuits.some((c) => {
+          const wireMm = parseFloat(c.wire);
+          if (isNaN(wireMm)) return false;
+          if (wireMm <= 1.5 && c.amps > 10) return true;
+          if (wireMm <= 2.5 && c.amps > 16) return true;
+          if (wireMm <= 4.0 && c.amps > 25) return true;
+          return false;
+        });
+        return mismatch
+          ? 'PELIGRO DE SOBRECALENTAMIENTO: Existen disyuntores sobredimensionados para el calibre del conductor.'
+          : 'Coordinación Correcta: Los amparajes de los disyuntores no superan la capacidad nominal de los conductores EVA.';
+      })(),
+    },
+    {
+      id: 'trip_curves',
+      title: 'Adecuación de Curvas de Disparo B / C / D - RIC N°05',
+      status: (() => {
+        const hasD = circuits.some((c) => c.curve === 'Curva D');
+        const hasInductive = circuits.some((c) => c.name.toLowerCase().includes('clima') || c.name.toLowerCase().includes('motor') || c.name.toLowerCase().includes('bomba'));
+        if (hasInductive && !hasD) return 'warning' as const;
+        return 'pass' as const;
+      })(),
+      message: (() => {
+        const hasD = circuits.some((c) => c.curve === 'Curva D');
+        const hasInductive = circuits.some((c) => c.name.toLowerCase().includes('clima') || c.name.toLowerCase().includes('motor') || c.name.toLowerCase().includes('bomba'));
+        if (hasInductive && !hasD) return 'Sugerencia SEC: Se detectaron cargas inductivas (Clima/Motor) sin Curva D asignada. Se recomienda cambiar a Curva D.';
+        return 'Curvas de Disparo correctamente asociadas al tipo de carga del circuito.';
+      })(),
+    },
+  ];
+
+  const handleAutoFixWiring = () => {
+    const newCircuitBreakers = { ...specs.circuitBreakers };
+    let groupCount = 0;
+
+    circuits.forEach((c) => {
+      const wireMm = parseFloat(c.wire) || 2.5;
+      let targetAmps = c.amps;
+      if (wireMm <= 1.5) targetAmps = 10;
+      else if (wireMm <= 2.5) targetAmps = 16;
+      else if (wireMm <= 4.0) targetAmps = 20;
+      else targetAmps = 32;
+
+      let targetCurve = c.curve || 'Curva C';
+      if (c.name.toLowerCase().includes('clima') || c.name.toLowerCase().includes('motor') || c.name.toLowerCase().includes('bomba') || c.name.toLowerCase().includes('hvac')) {
+        targetCurve = 'Curva D';
+      } else if (c.name.toLowerCase().includes('termo') || c.name.toLowerCase().includes('calefac')) {
+        targetCurve = 'Curva B';
+      }
+
+      if (groupCount >= 3) {
+        groupCount = 0;
+      }
+      groupCount++;
+
+      newCircuitBreakers[c.code] = {
+        amps: targetAmps,
+        curve: targetCurve,
+        breakingCapacity: '6kA',
+        wireSection: `${wireMm} mm²`,
+        pipeType: c.pipe,
+        customName: c.name,
+      };
+    });
+
+    const updatedSpecs: CustomProtectionSpecs = {
+      ...specs,
+      circuitBreakers: newCircuitBreakers,
+    };
+
+    updateSpecsAndSync(updatedSpecs, '⚡ Auto-cableado y coordinaciones SEC corregidas exitosamente.');
+    setShowWiringVerifier(false);
+  };
+
+  const addModuleToRail = (type: string, label: string, amps = 16, curve = 'Curva C') => {
+    const newMod = {
+      id: `custom-${Date.now()}`,
+      type,
+      label,
+      amps,
+      curve,
+    };
+    setCustomRailModules((prev) => [...prev, newMod]);
+    showToast(`Módulo "${label}" añadido al Riel DIN del tablero.`);
+  };
+
+  const removeModuleFromRail = (id: string) => {
+    setCustomRailModules((prev) => prev.filter((m) => m.id !== id));
+    showToast('Módulo removido del Riel DIN.');
+  };
+
+  return (
+    <div className="bg-slate-900 border-2 border-slate-800 rounded-2xl p-5 shadow-2xl space-y-5 text-slate-100 relative overflow-hidden my-6">
+      <div
+        className={`absolute -top-24 -right-24 w-96 h-96 rounded-full blur-3xl pointer-events-none transition-all duration-700 ${
+          isEnergized ? 'bg-emerald-500/10' : 'bg-rose-500/10'
+        }`}
+      />
+
+      {/* Header & Controls Bar */}
+      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 border-b border-slate-800 pb-4 relative z-10">
+        <div className="flex items-center gap-3">
+          <div
+            className={`w-11 h-11 rounded-2xl border flex items-center justify-center shrink-0 transition-all ${
+              isEnergized
+                ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400 shadow-lg shadow-emerald-500/20'
+                : 'bg-rose-500/20 border-rose-500/50 text-rose-400 shadow-lg shadow-rose-500/20'
+            }`}
+          >
+            <Power className={`w-6 h-6 ${isEnergized ? 'animate-pulse' : ''}`} />
+          </div>
+
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h3 className="text-sm font-black text-white uppercase tracking-wider">
+                Tablero Eléctrico TDA 2D Interactivo - Simulador RIC SEC
+              </h3>
+              <span
+                className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border flex items-center gap-1.5 ${
+                  isEnergized
+                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                    : 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                }`}
+              >
+                <span className={`w-2 h-2 rounded-full ${isEnergized ? 'bg-emerald-400 animate-ping' : 'bg-rose-400'}`} />
+                {isEnergized ? '220V/380V ENERGIZADO' : 'DESENERGIZADO'}
+              </span>
+            </div>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Simulador físico de Rieles DIN, auto-cableado de seguridad, pruebas de disparo RCD y curvas B/C/D SEC.
+            </p>
+          </div>
+        </div>
+
+        {/* Action Toolbar */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            type="button"
+            onClick={toggleEnergized}
+            className={`px-3.5 py-2 rounded-xl text-xs font-black transition-all border flex items-center gap-2 shadow-md ${
+              isEnergized
+                ? 'bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-400 active:scale-95'
+                : 'bg-rose-600 hover:bg-rose-500 text-white border-rose-400 active:scale-95'
+            }`}
+          >
+            <Power className="w-4 h-4" />
+            <span>{isEnergized ? 'Desenergizar Tablero' : 'Energizar Tablero'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowWiringVerifier(true)}
+            className="px-3 py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white border border-indigo-400/50 transition-all flex items-center gap-1.5 shadow-md active:scale-95"
+          >
+            <ShieldCheck className="w-4 h-4 text-amber-300" />
+            <span>Verificar Auto-Cableado SEC</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowWiringGuide((prev) => !prev)}
+            className={`px-3 py-2 rounded-xl text-xs font-bold transition-all border flex items-center gap-1.5 shadow-md ${
+              showWiringGuide
+                ? 'bg-amber-500 text-slate-950 border-amber-300 font-extrabold'
+                : 'bg-slate-800 hover:bg-slate-750 text-slate-200 border-slate-700'
+            }`}
+          >
+            <Layers className="w-4 h-4 text-amber-400" />
+            <span>Guía de Cableado</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowComponentPalette((prev) => !prev)}
+            className={`px-3 py-2 rounded-xl text-xs font-bold transition-all border flex items-center gap-1.5 shadow-md ${
+              showComponentPalette
+                ? 'bg-purple-600 text-white border-purple-400 font-extrabold'
+                : 'bg-slate-800 hover:bg-slate-750 text-slate-200 border-slate-700'
+            }`}
+          >
+            <PlusCircle className="w-4 h-4 text-purple-400" />
+            <span>Módulos DIN</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setIsDoorClosed((prev) => !prev)}
+            className="px-3 py-2 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-750 text-slate-300 border border-slate-700 transition-all flex items-center gap-1.5"
+          >
+            <Wrench className="w-3.5 h-3.5 text-slate-400" />
+            <span>{isDoorClosed ? 'Abrir Puerta TDA' : 'Cerrar Puerta IP65'}</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Live Digital Instruments */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-950 p-3.5 rounded-2xl border border-slate-800">
+        <div className="bg-slate-900/90 p-2.5 rounded-xl border border-slate-800/80">
+          <span className="text-[10px] text-slate-400 font-semibold block">Tensión Nominal (V)</span>
+          <div className="flex items-center gap-2 mt-0.5">
+            <Gauge className="w-4 h-4 text-emerald-400" />
+            <span className={`font-mono font-black text-sm ${isEnergized ? 'text-emerald-300' : 'text-slate-500'}`}>
+              {isEnergized ? `${isThreePhase ? '380.2 V (3Ф)' : '220.4 V (1Ф)'}` : '0.0 V'}
+            </span>
+          </div>
+        </div>
+
+        <div className="bg-slate-900/90 p-2.5 rounded-xl border border-slate-800/80">
+          <span className="text-[10px] text-slate-400 font-semibold block">Frecuencia de Red</span>
+          <div className="flex items-center gap-2 mt-0.5">
+            <Activity className="w-4 h-4 text-indigo-400" />
+            <span className={`font-mono font-black text-sm ${isEnergized ? 'text-indigo-300 animate-pulse' : 'text-slate-500'}`}>
+              {isEnergized ? '50.0 Hz' : '0.0 Hz'}
+            </span>
+          </div>
+        </div>
+
+        <div className="bg-slate-900/90 p-2.5 rounded-xl border border-slate-800/80">
+          <span className="text-[10px] text-slate-400 font-semibold block">Corriente Total Carga</span>
+          <div className="flex items-center gap-2 mt-0.5">
+            <Zap className="w-4 h-4 text-amber-400" />
+            <span className={`font-mono font-black text-sm ${isEnergized ? 'text-amber-300' : 'text-slate-500'}`}>
+              {isEnergized ? `${currentAmpTotal} A` : '0 A'}
+            </span>
+          </div>
+        </div>
+
+        <div className="bg-slate-900/90 p-2.5 rounded-xl border border-slate-800/80">
+          <span className="text-[10px] text-slate-400 font-semibold block">Potencia Activa Total</span>
+          <div className="flex items-center gap-2 mt-0.5">
+            <TrendingUp className="w-4 h-4 text-purple-400" />
+            <span className={`font-mono font-black text-sm ${isEnergized ? 'text-purple-300' : 'text-slate-500'}`}>
+              {isEnergized ? `${(totalLoadW / 1000).toFixed(2)} kW` : '0.00 kW'}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Palette Drawer */}
+      {showComponentPalette && (
+        <div className="bg-slate-950 p-4 rounded-2xl border-2 border-purple-500/40 space-y-3 animate-fadeIn">
+          <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+            <div className="flex items-center gap-2">
+              <PlusCircle className="w-4 h-4 text-purple-400" />
+              <h4 className="text-xs font-black text-white uppercase tracking-wider">
+                Paleta de Módulos DIN - Añadir / Personalizar Componentes en Riel
+              </h4>
+            </div>
+            <button onClick={() => setShowComponentPalette(false)} className="text-slate-400 hover:text-white">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <p className="text-[11px] text-slate-400">
+            Haz clic en los componentes para insertarlos en el riel inferior de módulos personalizados:
+          </p>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+            <button
+              type="button"
+              onClick={() => addModuleToRail('mcb', 'Disyuntor C10 A', 10, 'Curva C')}
+              className="bg-slate-900 hover:bg-slate-800 p-2.5 rounded-xl border border-slate-700 text-left transition-all space-y-1"
+            >
+              <span className="font-extrabold text-emerald-400 text-xs block">Disyuntor MCB 10A</span>
+              <span className="text-[10px] text-slate-400 block">Alumbrado Curva C (6kA)</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => addModuleToRail('mcb', 'Disyuntor C16 A', 16, 'Curva C')}
+              className="bg-slate-900 hover:bg-slate-800 p-2.5 rounded-xl border border-slate-700 text-left transition-all space-y-1"
+            >
+              <span className="font-extrabold text-amber-400 text-xs block">Disyuntor MCB 16A</span>
+              <span className="text-[10px] text-slate-400 block">Enchufes Curva C (6kA)</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => addModuleToRail('mcb', 'Disyuntor C25 A', 25, 'Curva D')}
+              className="bg-slate-900 hover:bg-slate-800 p-2.5 rounded-xl border border-slate-700 text-left transition-all space-y-1"
+            >
+              <span className="font-extrabold text-purple-400 text-xs block">Disyuntor C25A (Curva D)</span>
+              <span className="text-[10px] text-slate-400 block">Clima / Motor Inductivo</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => addModuleToRail('rcd', 'RCD Auxiliar 25A 30mA', 25)}
+              className="bg-slate-900 hover:bg-slate-800 p-2.5 rounded-xl border border-slate-700 text-left transition-all space-y-1"
+            >
+              <span className="font-extrabold text-indigo-400 text-xs block">RCD Auxiliar 30mA</span>
+              <span className="text-[10px] text-slate-400 block">Diferencial Extra 2x25A</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => addModuleToRail('meter', 'Voltímetro DIN Digital')}
+              className="bg-slate-900 hover:bg-slate-800 p-2.5 rounded-xl border border-slate-700 text-left transition-all space-y-1"
+            >
+              <span className="font-extrabold text-teal-400 text-xs block">Voltímetro/Amperímetro</span>
+              <span className="text-[10px] text-slate-400 block">Medidor Modular Carril</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => addModuleToRail('terminal', 'Bornera Neutro / Tierra')}
+              className="bg-slate-900 hover:bg-slate-800 p-2.5 rounded-xl border border-slate-700 text-left transition-all space-y-1"
+            >
+              <span className="font-extrabold text-cyan-400 text-xs block">Peine / Bornera DIN</span>
+              <span className="text-[10px] text-slate-400 block">Puente de Distribución</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* SEC Wiring Guide Overlay */}
+      {showWiringGuide && (
+        <div className="bg-amber-950/40 border-2 border-amber-500/50 p-4 rounded-2xl text-xs space-y-3 animate-fadeIn">
+          <div className="flex items-center justify-between border-b border-amber-500/30 pb-2">
+            <div className="flex items-center gap-2">
+              <Layers className="w-4 h-4 text-amber-400" />
+              <strong className="text-amber-300 font-extrabold uppercase tracking-wide">
+                Guía Oficial de Cableado SEC Chile (RIC N°03 & RIC N°04)
+              </strong>
+            </div>
+            <button onClick={() => setShowWiringGuide(false)} className="text-amber-400 hover:text-white">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-5 gap-2 text-[11px]">
+            <div className="bg-slate-900 p-2 rounded-xl border border-red-500/40 flex items-center gap-2">
+              <span className="w-3 h-3 rounded-full bg-red-500 shrink-0 shadow" />
+              <div>
+                <strong className="text-red-300 block">Fase L1 (R)</strong>
+                <span className="text-slate-400 text-[10px]">Rojo / Café</span>
+              </div>
+            </div>
+
+            <div className="bg-slate-900 p-2 rounded-xl border border-blue-500/40 flex items-center gap-2">
+              <span className="w-3 h-3 rounded-full bg-blue-500 shrink-0 shadow" />
+              <div>
+                <strong className="text-blue-300 block">Fase L2 (S)</strong>
+                <span className="text-slate-400 text-[10px]">Azul (Trifásico)</span>
+              </div>
+            </div>
+
+            <div className="bg-slate-900 p-2 rounded-xl border border-slate-700 flex items-center gap-2">
+              <span className="w-3 h-3 rounded-full bg-slate-950 border border-slate-400 shrink-0 shadow" />
+              <div>
+                <strong className="text-slate-200 block">Fase L3 (T)</strong>
+                <span className="text-slate-400 text-[10px]">Negro (Trifásico)</span>
+              </div>
+            </div>
+
+            <div className="bg-slate-900 p-2 rounded-xl border border-sky-400/40 flex items-center gap-2">
+              <span className="w-3 h-3 rounded-full bg-sky-300 shrink-0 shadow" />
+              <div>
+                <strong className="text-sky-300 block">Neutro (N)</strong>
+                <span className="text-slate-400 text-[10px]">Blanco / Celeste</span>
+              </div>
+            </div>
+
+            <div className="bg-slate-900 p-2 rounded-xl border border-emerald-500/40 flex items-center gap-2">
+              <span className="w-3 h-3 rounded-full bg-emerald-400 shrink-0 shadow" />
+              <div>
+                <strong className="text-emerald-300 block">Tierra PE</strong>
+                <span className="text-slate-400 text-[10px]">Verde / Amarillo</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Auto-Wiring Verifier Modal */}
+      {showWiringVerifier && (
+        <div className="bg-slate-950 border-2 border-indigo-500/50 p-5 rounded-2xl space-y-4 animate-fadeIn shadow-2xl">
+          <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-indigo-500/20 border border-indigo-500/40 text-indigo-400 flex items-center justify-center">
+                <ShieldCheck className="w-5 h-5 text-amber-300" />
+              </div>
+              <div>
+                <h4 className="text-sm font-black text-white uppercase tracking-wider">
+                  Verificador Automático de Cableado SEC (RIC N°03 - RIC N°06)
+                </h4>
+                <p className="text-xs text-slate-400">
+                  Diagnóstico en tiempo real de protecciones, conductores y coordinaciones térmicas.
+                </p>
+              </div>
+            </div>
+
+            <button onClick={() => setShowWiringVerifier(false)} className="text-slate-400 hover:text-white">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          <div className="space-y-2.5">
+            {checks.map((chk) => (
+              <div
+                key={chk.id}
+                className={`p-3 rounded-xl border text-xs flex items-start gap-3 transition-all ${
+                  chk.status === 'pass'
+                    ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-200'
+                    : chk.status === 'warning'
+                    ? 'bg-amber-950/40 border-amber-500/40 text-amber-200'
+                    : 'bg-rose-950/40 border-rose-500/40 text-rose-200'
+                }`}
+              >
+                {chk.status === 'pass' ? (
+                  <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+                ) : chk.status === 'warning' ? (
+                  <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                ) : (
+                  <ShieldAlert className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+                )}
+
+                <div className="space-y-0.5">
+                  <strong className="font-bold text-white block text-xs">{chk.title}</strong>
+                  <p className="text-[11px] leading-relaxed opacity-90">{chk.message}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex items-center justify-between pt-2 border-t border-slate-800">
+            <span className="text-xs text-slate-400">
+              Presiona para aplicar ajustes automáticos de curvas y secciones.
+            </span>
+
+            <button
+              type="button"
+              onClick={handleAutoFixWiring}
+              className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs px-4 py-2.5 rounded-xl shadow-lg border border-emerald-400/50 transition-all active:scale-95 flex items-center gap-2"
+            >
+              <Wrench className="w-4 h-4 text-amber-300" />
+              <span>⚡ Ejecutar Auto-Corrección Completa SEC</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* REALISTIC 2D CABINET CONTAINER */}
+      <div
+        className={`bg-slate-950 rounded-2xl border-4 border-slate-800 p-5 shadow-inner relative transition-all duration-500 overflow-hidden ${
+          isDoorClosed ? 'opacity-40 grayscale pointer-events-none' : 'opacity-100'
+        }`}
+      >
+        {/* Copper Earth & Neutral Bars */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6 bg-slate-900/80 p-3 rounded-xl border border-slate-800">
+          <div className="flex items-center justify-between bg-slate-950 p-2.5 rounded-lg border border-emerald-500/40">
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-8 bg-amber-600 rounded border border-amber-400 shadow-sm" />
+              <div>
+                <strong className="text-xs text-emerald-400 font-mono block">BARRA TIERRA DE PROTECCIÓN (PE)</strong>
+                <span className="text-[10px] text-slate-400">Puesta a Malla R ≤ 20 Ω (Conductor 6.0 mm² EVA)</span>
+              </div>
+            </div>
+            <span className="text-[10px] font-mono bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded border border-emerald-500/30">
+              OK CONECTADA
+            </span>
+          </div>
+
+          <div className="flex items-center justify-between bg-slate-950 p-2.5 rounded-lg border border-sky-500/40">
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-8 bg-slate-300 rounded border border-sky-400 shadow-sm" />
+              <div>
+                <strong className="text-xs text-sky-400 font-mono block">BARRA DE NEUTRO AISLADA (N)</strong>
+                <span className="text-[10px] text-slate-400">Aislamiento & Cut-off para Diferenciales RCD</span>
+              </div>
+            </div>
+            <span className="text-[10px] font-mono bg-sky-500/20 text-sky-300 px-2 py-0.5 rounded border border-sky-500/30">
+              AISLADA OK
+            </span>
+          </div>
+        </div>
+
+        {/* DIN RAIL 1 */}
+        <div className="space-y-2 mb-6">
+          <div className="flex items-center justify-between text-xs text-slate-400 font-mono font-bold uppercase tracking-wider px-1">
+            <span>RIEL DIN N°1: ALIMENTACIÓN PRINCIPAL & PROTECCIÓN DE ENTRADA</span>
+            <span className="text-[10px] text-indigo-400">Carril 35mm Normalizado</span>
+          </div>
+
+          <div className="relative bg-gradient-to-r from-slate-700 via-slate-600 to-slate-700 h-16 rounded-xl p-2 border-y-2 border-slate-500 shadow-md flex items-center gap-3 overflow-x-auto custom-scrollbar">
+            <div className="shrink-0 bg-slate-900 border-2 border-emerald-500/60 p-2 rounded-lg text-center space-y-1 w-28 shadow-lg relative">
+              <span className="text-[9px] font-extrabold text-emerald-400 block uppercase">EMPALME / kWh</span>
+              <div className="bg-slate-950 p-1 rounded font-mono text-[10px] text-emerald-300 font-black">
+                {isEnergized ? '220.4 V' : '0 V'}
+              </div>
+              <span className="text-[8px] text-slate-400 block">Medidor SEC</span>
+            </div>
+
+            <div className={`w-4 h-1 transition-all ${isEnergized ? 'bg-emerald-400 animate-pulse shadow-sm shadow-emerald-400' : 'bg-slate-600'}`} />
+
+            <div className="shrink-0 bg-slate-900 border-2 border-purple-500/80 p-2 rounded-lg text-center space-y-1 w-36 shadow-lg relative">
+              <span className="text-[9px] font-extrabold text-fuchsia-300 block uppercase">IGA PRINCIPAL</span>
+              <div className="bg-slate-950 p-1 rounded font-mono text-xs text-white font-black">
+                {iga.poles} {iga.amps}A {iga.curve}
+              </div>
+              <span className="text-[8px] text-purple-300 block">P.C. {iga.breakingCapacity}</span>
+            </div>
+
+            <div className={`w-4 h-1 transition-all ${isEnergized ? 'bg-purple-400 animate-pulse' : 'bg-slate-600'}`} />
+
+            <div className="shrink-0 bg-slate-900 border-2 border-amber-500/80 p-2 rounded-lg text-center space-y-1 w-36 shadow-lg relative">
+              <span className="text-[9px] font-extrabold text-amber-400 block uppercase">DPS SOBRETENSIÓN</span>
+              <div className="bg-slate-950 p-1 rounded font-mono text-[10px] text-amber-200 font-bold">
+                {dps.voltage} / {dps.dischargeCurrent}
+              </div>
+              <span className="text-[8px] text-amber-300/80 block">Protección Clase II</span>
+            </div>
+
+            <div className={`w-4 h-1 transition-all ${isEnergized ? 'bg-amber-400 animate-pulse' : 'bg-slate-600'}`} />
+
+            <div className="shrink-0 bg-slate-900 border-2 border-teal-500/80 p-2 rounded-lg text-center space-y-1 w-32 shadow-lg relative">
+              <span className="text-[9px] font-extrabold text-teal-300 block uppercase">VOLTÍMETRO DIN</span>
+              <div className="bg-slate-950 p-1 rounded font-mono text-[11px] text-teal-300 font-black">
+                {isEnergized ? '50.0 Hz' : '0 Hz'}
+              </div>
+              <span className="text-[8px] text-slate-400 block">Monitor Digital</span>
+            </div>
+          </div>
+        </div>
+
+        {/* DIN RAIL 2 */}
+        <div className="space-y-2 mb-6">
+          <div className="flex items-center justify-between text-xs text-slate-400 font-mono font-bold uppercase tracking-wider px-1">
+            <span>RIEL DIN N°2: PROTECCIÓN DIFERENCIAL CONTRA FUGA A TIERRA (RCD 30mA)</span>
+            <span className="text-[10px] text-purple-400">RIC N°05 Norma SEC</span>
+          </div>
+
+          <div className="relative bg-gradient-to-r from-slate-700 via-slate-600 to-slate-700 h-20 rounded-xl p-2 border-y-2 border-slate-500 shadow-md flex items-center gap-4 overflow-x-auto custom-scrollbar">
+            {Object.entries(rcds).map(([grpStr, rcd]) => {
+              const grpNum = parseInt(grpStr, 10);
+              const isTripped = rcdTrippedState[grpNum] === true;
+
+              return (
+                <div
+                  key={grpStr}
+                  className={`shrink-0 bg-slate-900 border-2 p-2.5 rounded-xl text-center space-y-1.5 w-48 shadow-xl transition-all relative ${
+                    isTripped
+                      ? 'border-rose-500 bg-rose-950/30'
+                      : 'border-purple-500/80 hover:border-purple-400'
+                  }`}
+                >
+                  <div className="flex items-center justify-between border-b border-slate-800 pb-1">
+                    <span className="text-[10px] font-black text-purple-300">RCD GRUPO {grpNum}</span>
+                    <span
+                      className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
+                        isTripped ? 'bg-rose-500 text-white' : 'bg-emerald-500/20 text-emerald-300'
+                      }`}
+                    >
+                      {isTripped ? 'DISPARADO' : 'OPERATIVO'}
+                    </span>
+                  </div>
+
+                  <div className="font-mono text-xs font-black text-white">
+                    2x{rcd.amps}A | {rcd.sensitivity}
+                  </div>
+
+                  <div className="flex items-center justify-between gap-1 pt-1">
+                    <span className="text-[9px] text-slate-400">{rcd.classType || 'Clase AC'}</span>
+
+                    <button
+                      type="button"
+                      onClick={() => handleRcdTest(grpNum)}
+                      className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-[9px] px-2 py-0.5 rounded border border-amber-300 active:scale-90 transition-all shadow"
+                    >
+                      TEST ⚡
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* DIN RAIL 3 */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between text-xs text-slate-400 font-mono font-bold uppercase tracking-wider px-1">
+            <span>RIEL DIN N°3: CIRCUITOS DERIVADOS AUTOMÁTICOS MCB (SELECCIÓN CURVA B/C/D)</span>
+            <span className="text-[10px] text-amber-400">Total {circuits.length} Circuitos TE1</span>
+          </div>
+
+          <div className="relative bg-gradient-to-r from-slate-700 via-slate-600 to-slate-700 p-3 rounded-xl border-y-2 border-slate-500 shadow-md flex items-center gap-3 overflow-x-auto custom-scrollbar min-h-[120px]">
+            {circuits.map((cto) => {
+              const isMcbOn = mcbState[cto.code] !== false;
+              const curveInfo = TRIP_CURVE_INFO[cto.curve] || TRIP_CURVE_INFO['Curva C'];
+
+              return (
+                <div
+                  key={cto.code}
+                  className={`shrink-0 bg-slate-900 border-2 p-3 rounded-xl space-y-2 w-52 shadow-2xl transition-all relative ${
+                    !isMcbOn
+                      ? 'border-slate-700 opacity-60'
+                      : cto.curve === 'Curva B'
+                      ? 'border-amber-500/80'
+                      : cto.curve === 'Curva C'
+                      ? 'border-emerald-500/80'
+                      : 'border-purple-500/80'
+                  }`}
+                >
+                  <div className="flex items-center justify-between border-b border-slate-800 pb-1">
+                    <span className="font-mono font-black text-amber-400 text-xs">{cto.code}</span>
+                    <span className="text-[10px] text-slate-300 font-bold truncate max-w-[100px]">{cto.name}</span>
+                  </div>
+
+                  <div className="flex items-center justify-between font-mono text-xs font-black text-white">
+                    <span>1x{cto.amps}A</span>
+                    <span className="text-[10px] text-slate-400 font-normal">{cto.loadW}W</span>
+                  </div>
+
+                  <div className="text-[9px] text-slate-400 font-mono flex justify-between">
+                    <span>Cond: {cto.wire}</span>
+                    <span>Tub: {cto.pipe}</span>
+                  </div>
+
+                  {/* Curve Selector */}
+                  <div className="pt-1 border-t border-slate-800/80 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9px] text-slate-400 font-semibold">Curva Disparo:</span>
+                      <div className="relative group/curvedin">
+                        <HelpCircle className="w-3.5 h-3.5 text-amber-400 hover:text-white cursor-pointer" />
+                        <div className="absolute right-0 bottom-full mb-2 hidden group-hover/curvedin:block w-64 p-3 bg-slate-900 border-2 border-amber-500 rounded-xl shadow-2xl text-[10px] text-white z-50 pointer-events-none">
+                          <div className="font-bold text-amber-400 text-xs mb-1">
+                            {cto.curve} ({curveInfo.range})
+                          </div>
+                          <p className="text-slate-300 leading-tight mb-1">{curveInfo.description}</p>
+                          <div className="text-amber-300 font-mono bg-amber-950/40 p-1.5 rounded border border-amber-500/30">
+                            <strong>Aplicación:</strong> {curveInfo.applications}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-1">
+                      {(['Curva B', 'Curva C', 'Curva D'] as const).map((crv) => {
+                        const isSel = cto.curve === crv;
+                        return (
+                          <button
+                            key={crv}
+                            type="button"
+                            onClick={() => {
+                              const currentCb = specs.circuitBreakers?.[cto.code] || {
+                                amps: cto.amps,
+                                breakingCapacity: cto.breakingCapacity,
+                                wireSection: cto.wire,
+                                pipeType: cto.pipe,
+                                customName: cto.name,
+                              };
+                              const updated = {
+                                ...specs,
+                                circuitBreakers: {
+                                  ...specs.circuitBreakers,
+                                  [cto.code]: { ...currentCb, curve: crv },
+                                },
+                              };
+                              updateSpecsAndSync(updated, `Curva de ${cto.code} cambiada a ${crv}.`);
+                            }}
+                            className={`text-[9px] font-black py-1 rounded transition-all border ${
+                              isSel
+                                ? crv === 'Curva B'
+                                  ? 'bg-amber-500 text-slate-950 border-amber-300 font-black shadow'
+                                  : crv === 'Curva C'
+                                  ? 'bg-emerald-500 text-slate-950 border-emerald-300 font-black shadow'
+                                  : 'bg-purple-500 text-white border-purple-300 font-black shadow'
+                                : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
+                            }`}
+                          >
+                            {crv.replace('Curva ', '')}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => toggleMcb(cto.code)}
+                    className={`w-full py-1 rounded text-[10px] font-extrabold transition-all border ${
+                      isMcbOn
+                        ? 'bg-emerald-950/60 text-emerald-300 border-emerald-500/40 hover:bg-emerald-900'
+                        : 'bg-rose-950/60 text-rose-300 border-rose-500/40 hover:bg-rose-900'
+                    }`}
+                  >
+                    {isMcbOn ? 'ON (Energizado)' : 'OFF (Desconectado)'}
+                  </button>
+                </div>
+              );
+            })}
+
+            {customRailModules.map((mod) => (
+              <div
+                key={mod.id}
+                className="shrink-0 bg-purple-950/40 border-2 border-purple-400 p-3 rounded-xl space-y-2 w-48 shadow-2xl relative"
+              >
+                <div className="flex items-center justify-between border-b border-purple-800/60 pb-1">
+                  <span className="text-[10px] font-black text-purple-300 truncate">{mod.label}</span>
+                  <button
+                    onClick={() => removeModuleFromRail(mod.id)}
+                    className="text-rose-400 hover:text-white p-0.5"
+                    title="Remover de Riel"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                </div>
+
+                <div className="font-mono text-xs font-bold text-white">
+                  {mod.type === 'mcb' ? `1x${mod.amps}A (${mod.curve})` : 'Módulo Auxiliar'}
+                </div>
+
+                <span className="text-[9px] bg-purple-900/60 text-purple-200 px-1.5 py-0.5 rounded border border-purple-700/50 block text-center font-mono">
+                  AÑADIDO MANUAL
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 interface SingleLineDiagramTabProps {
   rooms: RoomData[];
   highAppliances: HighAppliance[];
@@ -744,6 +1991,155 @@ export const SingleLineDiagramTab: React.FC<SingleLineDiagramTabProps> = ({
     showToast(msg);
   };
 
+  const handleAutoGenerateSchema = () => {
+    // 1. Calculate loads from rooms and highAppliances
+    const totalLightsCount = rooms.reduce((sum, r) => sum + (r.lightPoints || 0), 0);
+    const totalSocketsCount = rooms.reduce((sum, r) => sum + (r.socketPoints || 0), 0);
+    const roomDevsPower = rooms.reduce(
+      (sum, r) => sum + (r.devices || []).reduce((d, x) => d + (x.powerWatts || 0) * (x.quantity || 1), 0),
+      0
+    );
+    const highAppPower = highAppliances.reduce((sum, h) => sum + (h.powerWatts || 0), 0);
+    const calculatedTotalW = totalLightsCount * 100 + totalSocketsCount * 150 + roomDevsPower + highAppPower;
+
+    const nominalVoltage = isThreePhase ? 380 : 220;
+    const currentInAmps = calculatedTotalW / (nominalVoltage * 0.93 * (isThreePhase ? 1.732 : 1));
+
+    // 2. Determine IGA rating per RIC N°02 / RIC N°05
+    let autoIgaAmps = 25;
+    if (currentInAmps > 50) autoIgaAmps = 63;
+    else if (currentInAmps > 40) autoIgaAmps = 50;
+    else if (currentInAmps > 32) autoIgaAmps = 40;
+    else if (currentInAmps > 25) autoIgaAmps = 32;
+    else if (currentInAmps > 16) autoIgaAmps = 25;
+    else autoIgaAmps = 16;
+
+    // 3. Feeder section check per RIC N°04
+    const distanceL = feederLength || 20;
+    const calcFactor = isThreePhase ? Math.sqrt(3) : 2.0;
+    const maxDropVolts = (nominalVoltage * 3.0) / 100;
+    const theoreticalS = (calcFactor * distanceL * Math.max(1, currentInAmps) * rhoCopper) / maxDropVolts;
+    const recommendedFeederSection = NORMALIZED_SECTIONS.find((s) => s >= theoreticalS) || 4.0;
+
+    if (setFeederWireSection && feederWireSection < recommendedFeederSection) {
+      setFeederWireSection(recommendedFeederSection);
+    }
+
+    // 4. Build circuit breakers list
+    let lightCircCount = Math.ceil(totalLightsCount / 12) || (totalLightsCount > 0 ? 1 : 0);
+    let socketCircCount = Math.ceil(totalSocketsCount / 10) || (totalSocketsCount > 0 ? 1 : 0);
+
+    const generatedCircuitBreakers: Record<
+      string,
+      {
+        amps: number;
+        curve: string;
+        breakingCapacity: string;
+        wireSection: string;
+        pipeType: string;
+        customName?: string;
+      }
+    > = {};
+
+    let circuitIndex = 1;
+
+    for (let i = 0; i < lightCircCount; i++) {
+      const code = `C${circuitIndex}`;
+      generatedCircuitBreakers[code] = {
+        amps: 10,
+        curve: 'Curva C',
+        breakingCapacity: '6kA',
+        wireSection: '3 x 1.5 mm² EVA',
+        pipeType: 'PVC 20mm',
+        customName: `Alumbrado General ${i + 1}`,
+      };
+      circuitIndex++;
+    }
+
+    for (let i = 0; i < socketCircCount; i++) {
+      const code = `C${circuitIndex}`;
+      generatedCircuitBreakers[code] = {
+        amps: 16,
+        curve: 'Curva C',
+        breakingCapacity: '6kA',
+        wireSection: '3 x 2.5 mm² EVA',
+        pipeType: 'PVC 25mm',
+        customName: `Enchufes Generales ${i + 1}`,
+      };
+      circuitIndex++;
+    }
+
+    highAppliances.forEach((app) => {
+      const code = `C${circuitIndex}`;
+      let amps = 16;
+      let wire = '3 x 2.5 mm² EVA';
+      let pipe = 'PVC 25mm';
+      if (app.powerWatts > 5000) {
+        amps = 32;
+        wire = '3 x 6.0 mm² EVA';
+        pipe = 'EMT 3/4"';
+      } else if (app.powerWatts > 3000) {
+        amps = 20;
+        wire = '3 x 4.0 mm² EVA';
+        pipe = 'PVC 25mm';
+      }
+
+      generatedCircuitBreakers[code] = {
+        amps,
+        curve: 'Curva C',
+        breakingCapacity: '6kA',
+        wireSection: wire,
+        pipeType: pipe,
+        customName: `Carga Dedicada - ${app.name}`,
+      };
+      circuitIndex++;
+    });
+
+    if (circuitIndex === 1) {
+      generatedCircuitBreakers['C1'] = {
+        amps: 16,
+        curve: 'Curva C',
+        breakingCapacity: '6kA',
+        wireSection: '3 x 2.5 mm² EVA',
+        pipeType: 'PVC 25mm',
+        customName: 'Circuito General Base',
+      };
+      circuitIndex = 2;
+    }
+
+    const totalCircuitsGenerated = circuitIndex - 1;
+    const rcdGroupsNeeded = Math.max(1, Math.ceil(totalCircuitsGenerated / 3));
+    const generatedRcds: Record<number, { amps: number; sensitivity: string; classType: string }> = {};
+
+    for (let g = 1; g <= rcdGroupsNeeded; g++) {
+      generatedRcds[g] = {
+        amps: autoIgaAmps >= 40 ? 40 : 25,
+        sensitivity: '30mA',
+        classType: 'Clase AC',
+      };
+    }
+
+    const updatedSpecs: CustomProtectionSpecs = {
+      iga: {
+        amps: autoIgaAmps,
+        curve: 'Curva C',
+        breakingCapacity: '6kA',
+        poles: isThreePhase ? '3x' : '1x',
+      },
+      dps: {
+        voltage: isThreePhase ? '400V' : '275V',
+        dischargeCurrent: '20kA',
+      },
+      rcds: generatedRcds,
+      circuitBreakers: generatedCircuitBreakers,
+    };
+
+    updateSpecsAndSync(
+      updatedSpecs,
+      `⚡ Esquema unilineal autogenerado según RIC SEC: Potencia Total ${(calculatedTotalW / 1000).toFixed(2)} kW | IGA ${updatedSpecs.iga.poles}${autoIgaAmps}A | Alimentador ${recommendedFeederSection}mm² EVA (${distanceL}m) | ${totalCircuitsGenerated} Circuitos | ${rcdGroupsNeeded} RCD(s)`
+    );
+  };
+
   return (
     <div className="space-y-6 relative">
       {/* Toast Notification Banner */}
@@ -776,6 +2172,15 @@ export const SingleLineDiagramTab: React.FC<SingleLineDiagramTabProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-2 shrink-0">
+          <button
+            onClick={handleAutoGenerateSchema}
+            className="flex items-center gap-1.5 bg-gradient-to-r from-amber-500 via-amber-400 to-emerald-500 hover:from-amber-400 hover:to-emerald-400 text-slate-950 font-black text-xs px-3.5 py-2 rounded-lg shadow-lg border border-amber-300/50 transition-all active:scale-95"
+            title="Generar esquema unilineal automático según cargas actuales y norma RIC SEC"
+          >
+            <Zap className="w-4 h-4 text-slate-950 fill-slate-950" />
+            <span>Auto-Generar Esquema RIC</span>
+          </button>
+
           <button
             onClick={() => {
               onSyncToBudget(specs);
@@ -834,6 +2239,36 @@ export const SingleLineDiagramTab: React.FC<SingleLineDiagramTabProps> = ({
             <span>Imprimir</span>
           </button>
         </div>
+      </div>
+
+      {/* CARD CALLOUT DE GENERACIÓN AUTOMÁTICA DE ESQUEMA UNILINEAL */}
+      <div className="bg-gradient-to-r from-slate-900 via-slate-900 to-slate-950 border-2 border-amber-500/40 rounded-2xl p-5 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex items-start gap-3.5">
+          <div className="w-11 h-11 rounded-2xl bg-amber-500/20 border border-amber-500/40 text-amber-400 flex items-center justify-center shrink-0 mt-0.5 shadow-inner">
+            <Zap className="w-6 h-6 fill-amber-400 text-amber-400" />
+          </div>
+          <div className="space-y-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h3 className="text-sm font-black text-white uppercase tracking-wide">
+                Generador Automático de Esquema Unilineal RIC SEC
+              </h3>
+              <span className="bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                Basado en Cargas Actuales & Normativa
+              </span>
+            </div>
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Analiza los recuentos de <strong>{rooms.length} recintos</strong> ({totalLights} ptos. luz, {totalSockets} ptos. enchufes) y <strong>{highAppliances.length} cargas pesadas</strong>. Auto-calcula la potencia (<strong>{totalPowerKW.toFixed(2)} kW</strong> / <strong>{Math.round(currentIn)} A</strong>), dimensiona el alimentador EVA ({currentSection} mm²), asigna el IGA ({igaPoles}{igaAmps}A), los grupos diferenciales RCD y canalizaciones reglamentarias.
+            </p>
+          </div>
+        </div>
+
+        <button
+          onClick={handleAutoGenerateSchema}
+          className="shrink-0 bg-gradient-to-r from-amber-500 via-amber-400 to-emerald-500 hover:from-amber-400 hover:to-emerald-400 text-slate-950 font-black text-xs px-4 py-3 rounded-xl shadow-lg border border-amber-300/60 transition-all active:scale-95 flex items-center gap-2 self-start md:self-auto"
+        >
+          <RefreshCw className="w-4 h-4 text-slate-950" />
+          <span>Generar Esquema Unilineal RIC</span>
+        </button>
       </div>
 
       {/* CALCULADORA DE CAÍDA DE TENSIÓN Y SECCIÓN MÍNIMA (NORMA SEC RIC N°04) */}
@@ -1047,6 +2482,13 @@ export const SingleLineDiagramTab: React.FC<SingleLineDiagramTabProps> = ({
         )}
       </div>
 
+      {/* MÓDULO DE GRÁFICO RECHARTS: DISTRIBUCIÓN DE POTENCIA Y BALANCEO DE FASES */}
+      <CircuitPowerBarChart
+        circuits={circuits}
+        isThreePhase={isThreePhase}
+        vNominal={vNominal}
+      />
+
       {/* NUEVO MÓDULO: RENDERIZADO AUTOMÁTICO EN MOTOR CANVAS 2D CAD */}
       <SingleLineCanvasRenderer
         isThreePhase={isThreePhase}
@@ -1068,6 +2510,29 @@ export const SingleLineDiagramTab: React.FC<SingleLineDiagramTabProps> = ({
         dropVolts={currentDrop.dropVolts}
         dropPercent={currentDrop.dropPercent}
         isDropExceeded={isSectionInsufficient || currentDrop.dropPercent > maxAllowedDropPercent}
+      />
+
+      {/* NUEVO MÓDULO: SIMULADOR FÍSICO DE TABLERO 2D CON AUTO-CABLEADO Y RIELES DIN */}
+      <Tablero2DSimulator
+        isThreePhase={isThreePhase}
+        vNominal={vNominal}
+        iga={{
+          amps: igaAmps,
+          curve: igaCurve,
+          breakingCapacity: igaBreaking,
+          poles: igaPoles,
+        }}
+        dps={{
+          voltage: dpsVoltage,
+          dischargeCurrent: dpsDischarge,
+        }}
+        rcds={specs.rcds || {}}
+        circuits={circuits}
+        specs={specs}
+        updateSpecsAndSync={updateSpecsAndSync}
+        showToast={showToast}
+        feederWireSection={currentSection}
+        feederLength={feederLength || 20}
       />
 
       {/* DOCUMENTO Y DIAGRAMA IMPRIMIBLE COMPLETO PARA PDF (REF: diagramDocRef) */}
@@ -1375,6 +2840,71 @@ export const SingleLineDiagramTab: React.FC<SingleLineDiagramTabProps> = ({
                                 </span>
                                 <span className="text-emerald-400 font-bold">{cto.loadW} W</span>
                               </div>
+
+                              {/* Curve Selector & Technical Tooltip */}
+                              <div
+                                className="pt-2 border-t border-slate-800/80 mt-1 flex items-center justify-between gap-1"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <div className="flex items-center gap-1">
+                                  <span className="text-[10px] text-slate-400 font-semibold">Curva:</span>
+                                  {(['Curva B', 'Curva C', 'Curva D'] as const).map((crv) => {
+                                    const isSel = cto.curve === crv;
+                                    return (
+                                      <button
+                                        key={crv}
+                                        type="button"
+                                        onClick={() => {
+                                          const currentCb = specs.circuitBreakers?.[cto.code] || {
+                                            amps: cto.amps,
+                                            breakingCapacity: cto.breakingCapacity,
+                                            wireSection: cto.wire,
+                                            pipeType: cto.pipe,
+                                            customName: cto.name,
+                                          };
+                                          const updated = {
+                                            ...specs,
+                                            circuitBreakers: {
+                                              ...specs.circuitBreakers,
+                                              [cto.code]: { ...currentCb, curve: crv },
+                                            },
+                                          };
+                                          updateSpecsAndSync(updated, `Curva de ${cto.code} cambiada a ${crv}.`);
+                                        }}
+                                        className={`text-[9px] font-black px-1.5 py-0.5 rounded transition-all border ${
+                                          isSel
+                                            ? crv === 'Curva B'
+                                              ? 'bg-amber-500 text-slate-950 border-amber-300 font-bold shadow'
+                                              : crv === 'Curva C'
+                                              ? 'bg-emerald-500 text-slate-950 border-emerald-300 font-bold shadow'
+                                              : 'bg-purple-500 text-white border-purple-300 font-bold shadow'
+                                            : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-white hover:bg-slate-800'
+                                        }`}
+                                      >
+                                        {crv.replace('Curva ', '')}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+
+                                <div className="relative group/curvetip">
+                                  <HelpCircle className="w-3.5 h-3.5 text-slate-400 hover:text-amber-400 cursor-pointer transition-colors" />
+                                  <div className="absolute right-0 bottom-full mb-2 hidden group-hover/curvetip:block w-64 p-3 bg-slate-900 border-2 border-amber-500/60 rounded-xl shadow-2xl text-[10px] text-slate-200 z-50 pointer-events-none">
+                                    <div className="flex items-center justify-between border-b border-slate-800 pb-1 mb-1.5">
+                                      <span className="font-extrabold text-amber-400 text-xs">{cto.curve}</span>
+                                      <span className="font-mono text-[9px] bg-slate-800 text-amber-300 px-1.5 py-0.5 rounded border border-slate-700">
+                                        {TRIP_CURVE_INFO[cto.curve]?.range}
+                                      </span>
+                                    </div>
+                                    <p className="text-slate-300 leading-relaxed font-medium mb-1">
+                                      {TRIP_CURVE_INFO[cto.curve]?.description}
+                                    </p>
+                                    <div className="text-[9px] text-amber-300/90 font-mono bg-amber-950/40 p-1.5 rounded border border-amber-500/30">
+                                      <strong>Aplicación:</strong> {TRIP_CURVE_INFO[cto.curve]?.applications}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
                             </div>
                           </div>
                         ))}
@@ -1477,7 +3007,17 @@ export const SingleLineDiagramTab: React.FC<SingleLineDiagramTabProps> = ({
                           <td className="p-2 border border-slate-300 font-medium">{cto.name}</td>
                           <td className="p-2 border border-slate-300 font-mono">1x</td>
                           <td className="p-2 border border-slate-300 font-bold">{cto.amps} A</td>
-                          <td className="p-2 border border-slate-300">{cto.curve}</td>
+                          <td className="p-2 border border-slate-300">
+                            <div className="flex items-center gap-1 group/tbltip relative">
+                              <span className="font-bold text-slate-900">{cto.curve}</span>
+                              <HelpCircle className="w-3 h-3 text-slate-400 hover:text-amber-600 cursor-pointer" />
+                              <div className="absolute left-0 bottom-full mb-1 hidden group-hover/tbltip:block w-64 p-2.5 bg-slate-900 text-white rounded-xl shadow-2xl text-[10px] border border-slate-700 z-50 pointer-events-none">
+                                <div className="font-extrabold text-amber-400 text-xs mb-0.5">{cto.curve} ({TRIP_CURVE_INFO[cto.curve]?.range})</div>
+                                <p className="text-slate-300 font-normal leading-tight">{TRIP_CURVE_INFO[cto.curve]?.description}</p>
+                                <div className="mt-1 text-[9px] text-amber-300 font-mono">{TRIP_CURVE_INFO[cto.curve]?.applications}</div>
+                              </div>
+                            </div>
+                          </td>
                           <td className="p-2 border border-slate-300">{cto.breakingCapacity}</td>
                           <td className="p-2 border border-slate-300 font-mono">{cto.wire}</td>
                           <td className="p-2 border border-slate-300 font-mono">{cto.pipe}</td>
@@ -1868,6 +3408,66 @@ export const SingleLineDiagramTab: React.FC<SingleLineDiagramTabProps> = ({
                           <option value='EMT 3/4"'>EMT Metálico 3/4"</option>
                           <option value='EMT 1"'>EMT Metálico 1"</option>
                         </select>
+                      </div>
+
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <label className="font-bold text-slate-200">Tipo de Curva de Disparo (Norma SEC RIC N°05)</label>
+                          <span className="text-[10px] text-amber-400 font-mono font-semibold">
+                            {currentCb.curve || 'Curva C'} ({TRIP_CURVE_INFO[currentCb.curve || 'Curva C']?.range})
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                          {(['Curva B', 'Curva C', 'Curva D'] as const).map((crv) => {
+                            const info = TRIP_CURVE_INFO[crv];
+                            const isSelected = (currentCb.curve || 'Curva C') === crv;
+                            return (
+                              <button
+                                key={crv}
+                                type="button"
+                                onClick={() => {
+                                  const updated = {
+                                    ...specs,
+                                    circuitBreakers: {
+                                      ...specs.circuitBreakers,
+                                      [code]: { ...currentCb, curve: crv },
+                                    },
+                                  };
+                                  updateSpecsAndSync(updated, `Curva de disparo de ${code} cambiada a ${crv}.`);
+                                }}
+                                className={`p-2.5 rounded-xl border text-left transition-all relative flex flex-col justify-between ${
+                                  isSelected
+                                    ? crv === 'Curva B'
+                                      ? 'bg-amber-950/80 border-amber-400 text-white ring-2 ring-amber-400/40'
+                                      : crv === 'Curva C'
+                                      ? 'bg-emerald-950/80 border-emerald-400 text-white ring-2 ring-emerald-400/40'
+                                      : 'bg-purple-950/80 border-purple-400 text-white ring-2 ring-purple-400/40'
+                                    : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-750'
+                                }`}
+                              >
+                                <div>
+                                  <div className="flex items-center justify-between">
+                                    <span className="font-black text-xs">{crv}</span>
+                                    <span className={`text-[9px] font-mono font-bold px-1 rounded ${info.badgeBg} ${info.badgeText}`}>
+                                      {info.range}
+                                    </span>
+                                  </div>
+                                  <div className="text-[10px] font-medium opacity-90 mt-1 line-clamp-2">
+                                    {info.loadTypeLabel}
+                                  </div>
+                                </div>
+                                <p className="text-[9px] text-slate-400 mt-1.5 leading-tight">
+                                  {info.description}
+                                </p>
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <div className="mt-2 bg-slate-950 p-2.5 rounded-xl border border-slate-800 text-[10px] text-slate-300 leading-relaxed">
+                          <strong className="text-amber-400">Importancia Técnica SEC:</strong>{' '}
+                          {TRIP_CURVE_INFO[currentCb.curve || 'Curva C']?.secRule}
+                        </div>
                       </div>
                     </>
                   );
