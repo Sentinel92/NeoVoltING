@@ -16,6 +16,7 @@ import {
   X,
   Camera,
   Upload,
+  Paperclip,
   Image as ImageIcon,
   Trash2,
   ShieldCheck,
@@ -48,6 +49,13 @@ export interface ChatMessage {
   isError?: boolean;
 }
 
+const INITIAL_WELCOME_MESSAGE: ChatMessage = {
+  id: 'welcome_init',
+  role: 'model',
+  text: '¡Hola! Soy tu Copiloto Eléctrico NEOVOLT. Puedo ayudarte a diagnosticar fallas, guiarte en instalaciones según norma RIC/SEC o analizar fotos de tableros. ¿En qué trabajamos hoy?',
+  timestamp: 'Ahora',
+};
+
 export const AiDiagnosticConsultantTab: React.FC<AiDiagnosticConsultantTabProps> = ({
   isSecCertified = true,
   currentUser = {
@@ -60,8 +68,8 @@ export const AiDiagnosticConsultantTab: React.FC<AiDiagnosticConsultantTabProps>
   },
   onUpdateUserSession,
 }) => {
-  // Chat History State
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  // Chat History State initialized with welcome copilot greeting
+  const [messages, setMessages] = useState<ChatMessage[]>([INITIAL_WELCOME_MESSAGE]);
   const [faultDescription, setFaultDescription] = useState('');
   const [installationType, setInstallationType] = useState('Monofásica 220V Residencial');
   const [selectedMissingTools, setSelectedMissingTools] = useState<string[]>([]);
@@ -76,10 +84,15 @@ export const AiDiagnosticConsultantTab: React.FC<AiDiagnosticConsultantTabProps>
   const [isListening, setIsListening] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Api Key input state (for inline or modal custom key)
-  const [apiKeyInput, setApiKeyInput] = useState<string>(
-    currentUser.customGeminiApiKey || ''
-  );
+  // Api Key input state (for inline or modal custom key or localStorage)
+  const [apiKeyInput, setApiKeyInput] = useState<string>(() => {
+    if (currentUser.customGeminiApiKey) return currentUser.customGeminiApiKey;
+    try {
+      return localStorage.getItem('NEOVOLT_PERMANENT_GEMINI_KEY') || '';
+    } catch {
+      return '';
+    }
+  });
   const [showApiKeyNotice, setShowApiKeyNotice] = useState<boolean>(false);
 
   // Account Modal State
@@ -246,6 +259,13 @@ export const AiDiagnosticConsultantTab: React.FC<AiDiagnosticConsultantTabProps>
 
     const keyToUse = customApiKeyModal.trim() || undefined;
     setApiKeyInput(customApiKeyModal.trim());
+    if (customApiKeyModal.trim()) {
+      try {
+        localStorage.setItem('NEOVOLT_PERMANENT_GEMINI_KEY', customApiKeyModal.trim());
+      } catch (err) {
+        console.error(err);
+      }
+    }
 
     if (onUpdateUserSession) {
       onUpdateUserSession({
@@ -262,6 +282,11 @@ export const AiDiagnosticConsultantTab: React.FC<AiDiagnosticConsultantTabProps>
 
   const handleSaveApiKeyInline = () => {
     if (!apiKeyInput.trim()) return;
+    try {
+      localStorage.setItem('NEOVOLT_PERMANENT_GEMINI_KEY', apiKeyInput.trim());
+    } catch (err) {
+      console.error(err);
+    }
     if (onUpdateUserSession) {
       onUpdateUserSession({
         ...currentUser,
@@ -272,9 +297,8 @@ export const AiDiagnosticConsultantTab: React.FC<AiDiagnosticConsultantTabProps>
   };
 
   const handleClearChat = () => {
-    if (messages.length === 0) return;
-    if (confirm('¿Deseas iniciar una nueva consulta y borrar el historial del chat actual?')) {
-      setMessages([]);
+    if (confirm('¿Deseas iniciar una nueva consulta y reiniciar la conversación con tu Copiloto?')) {
+      setMessages([INITIAL_WELCOME_MESSAGE]);
       setFaultDescription('');
       setUploadedPhotos([]);
       setErrorMessage(null);
@@ -763,14 +787,14 @@ export const AiDiagnosticConsultantTab: React.FC<AiDiagnosticConsultantTabProps>
                 <Camera className="w-4 h-4" />
               </button>
 
-              {/* Gallery Trigger */}
+              {/* Attach / File Trigger */}
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 className="p-3 bg-slate-900 hover:bg-slate-800 border border-slate-700 hover:border-fuchsia-500 text-slate-300 rounded-2xl transition-all shadow shrink-0"
-                title="Subir foto de galería"
+                title="Adjuntar fotos de tableros o fallas"
               >
-                <Upload className="w-4 h-4" />
+                <Paperclip className="w-4 h-4" />
               </button>
 
               {/* Hidden File Inputs */}

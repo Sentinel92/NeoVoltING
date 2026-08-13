@@ -87,7 +87,7 @@ Estructura el informe con:
 Redacta de forma clara, técnica, profesional y en español chileno normativo. No uses markdown decorativo excesivo, mantén un formato limpio.`;
 
       const response = await ai.models.generateContent({
-        model: "gemini-3.6-flash",
+        model: "gemini-3.7-flash",
         contents: prompt,
       });
 
@@ -227,7 +227,7 @@ REGLAS DE FORMATO:
 - Organiza los números y unidades claramente (kW, A, V, mm², Ω, ms).`;
 
       const response = await ai.models.generateContent({
-        model: "gemini-3.6-flash",
+        model: "gemini-3.7-flash",
         contents: prompt,
       });
 
@@ -311,7 +311,7 @@ Haz 3 recomendaciones concisas y accionables destacando:
 3. Selección de conductores (EVA Libre de Halógenos) y canalización recomendada (PVC Conduit / EMT).`;
 
       const response = await ai.models.generateContent({
-        model: "gemini-3.6-flash",
+        model: "gemini-3.7-flash",
         contents: prompt,
       });
 
@@ -392,15 +392,10 @@ Haz 3 recomendaciones concisas y accionables destacando:
 - **Fotos adjuntas en este turno:** ${imageParts.length} foto(s).
 
 INSTRUCCIONES DE RESPUESTA:
-1. Si es la primera pregunta o un nuevo diagnóstico, estructura la respuesta usando los siguientes títulos en Markdown:
-🚨 **Nivel de Riesgo y EPP Requerido**
-🔍 **Diagnóstico de Falla y Causa Raíz**
-🛡️ **Procedimiento de Descarte Paso a Paso**
-📜 **Cita a la Normativa SEC RIC**
-🛒 **Lista Sugerida de Insumos y Repuestos**
-
-2. Si es una repregunta o continuación del chat, responde con precisión técnica directa respondiendo a las inquietudes específicas del técnico manteniendo la referencia a las fotos y diagnósticos anteriores.
-3. Ajusta el tono a español chileno técnico, profesional, práctico y riguroso.`;
+Eres un experto en ingeniería eléctrica (norma SEC/RIC Chile). Responde de forma técnica, clara y metódica.
+- Si se adjuntan fotos, analízalas minuciosamente (componentes visibles, marcas de quemadura, calibres, secciones de cable, orden de tableros).
+- Si se pregunta por instalaciones o procedimientos de reparación, proporciona pasos numerados claros y estructurados.
+- Mantén un tono profesional, riguroso y en español normativo chileno (citando pliegos RIC N°01 a N°11 cuando corresponda).`;
 
       // Build contents array supporting chat history
       const contentsPayload: any[] = [];
@@ -422,10 +417,10 @@ INSTRUCCIONES DE RESPUESTA:
         parts: [...imageParts, { text: promptText }],
       });
 
-      const systemInstructionText = "Eres el Consultor Técnico Senior de NEOVOLT, experto en Ingeniería Eléctrica y normativa chilena SEC (Pliegos Técnicos RIC N°01 al N°11). Analizas fotos de tableros, conexiones, disyuntores y fallas para emitir diagnósticos normativos precisos, detallando causas probables, medidas de seguridad inmediatas y solución técnica paso a paso.";
+      const systemInstructionText = "Eres el Copiloto Eléctrico y Consultor Técnico Senior de NEOVOLT, experto en Ingeniería Eléctrica y normativa chilena SEC (Pliegos Técnicos RIC N°01 al N°11). Analizas fotos de tableros, conexiones, disyuntores y fallas para emitir diagnósticos normativos precisos, guiando en instalaciones con pasos numerados, detallando causas probables, medidas de seguridad inmediatas y solución técnica paso a paso.";
 
       const response = await ai.models.generateContent({
-        model: "gemini-3.6-flash",
+        model: "gemini-3.7-flash",
         contents: contentsPayload,
         config: {
           systemInstruction: systemInstructionText,
@@ -543,7 +538,7 @@ Devuelve ÚNICAMENTE un objeto JSON válido (sin bloques de código ni texto adi
       }
 
       const response = await ai.models.generateContent({
-        model: "gemini-3.6-flash",
+        model: "gemini-3.7-flash",
         contents,
       });
 
