@@ -399,6 +399,7 @@ export const AiDiagnosticConsultantTab: React.FC<AiDiagnosticConsultantTabProps>
     setApiKeyInput(customApiKeyModal.trim());
     if (customApiKeyModal.trim()) {
       try {
+        localStorage.setItem('gemini_api_key', customApiKeyModal.trim());
         localStorage.setItem('NEOVOLT_PERMANENT_GEMINI_KEY', customApiKeyModal.trim());
       } catch (err) {
         console.error(err);
@@ -416,11 +417,13 @@ export const AiDiagnosticConsultantTab: React.FC<AiDiagnosticConsultantTabProps>
     }
     setIsAccountModalOpen(false);
     setShowApiKeyNotice(false);
+    setErrorMessage(null);
   };
 
   const handleSaveApiKeyInline = () => {
     if (!apiKeyInput.trim()) return;
     try {
+      localStorage.setItem('gemini_api_key', apiKeyInput.trim());
       localStorage.setItem('NEOVOLT_PERMANENT_GEMINI_KEY', apiKeyInput.trim());
     } catch (err) {
       console.error(err);
@@ -432,6 +435,7 @@ export const AiDiagnosticConsultantTab: React.FC<AiDiagnosticConsultantTabProps>
       });
     }
     setShowApiKeyNotice(false);
+    setErrorMessage(null);
   };
 
   const handleClearChat = () => {
@@ -469,9 +473,9 @@ export const AiDiagnosticConsultantTab: React.FC<AiDiagnosticConsultantTabProps>
 
   const getEffectiveApiKey = () => {
     const apiKey =
-      import.meta.env.VITE_GEMINI_API_KEY ||
-      localStorage.getItem('NEOVOLT_PERMANENT_GEMINI_KEY') ||
       localStorage.getItem('gemini_api_key') ||
+      localStorage.getItem('NEOVOLT_PERMANENT_GEMINI_KEY') ||
+      import.meta.env.VITE_GEMINI_API_KEY ||
       currentUser?.customGeminiApiKey ||
       apiKeyInput.trim();
 
@@ -488,10 +492,12 @@ export const AiDiagnosticConsultantTab: React.FC<AiDiagnosticConsultantTabProps>
     }
 
     setErrorMessage(null);
+
+    // Hierarchical API Key Resolution
     const apiKey =
-      import.meta.env.VITE_GEMINI_API_KEY ||
-      localStorage.getItem('NEOVOLT_PERMANENT_GEMINI_KEY') ||
       localStorage.getItem('gemini_api_key') ||
+      localStorage.getItem('NEOVOLT_PERMANENT_GEMINI_KEY') ||
+      import.meta.env.VITE_GEMINI_API_KEY ||
       currentUser?.customGeminiApiKey ||
       apiKeyInput.trim() ||
       '';
@@ -504,11 +510,28 @@ export const AiDiagnosticConsultantTab: React.FC<AiDiagnosticConsultantTabProps>
       id: userMsgId,
       role: 'user',
       text: promptText || 'Análisis fotográfico de componentes/tablero.',
-      images: uploadedPhotos.map((p) => ({ id: p.id, name: p.name, dataUrl: p.dataUrl })),
+      images: uploadedPhotos.map((p, pIdx) => ({ id: p.id || `up_${userMsgId}_${pIdx}`, name: p.name, dataUrl: p.dataUrl })),
       installationType,
       missingTools: selectedMissingTools.length > 0 ? [...selectedMissingTools] : undefined,
       timestamp: new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }),
     };
+
+    // If no valid API key exists, display a clear message requesting key entry in profile without making HTTP call
+    if (!activeApiKey) {
+      setShowApiKeyNotice(true);
+      const noKeyNoticeMsg: ChatMessage = {
+        id: `err_no_key_${Date.now()}`,
+        role: 'model',
+        text: `⚠️ **Clave de API de Google Gemini no configurada**\n\nPara obtener diagnósticos normativos con IA, por favor ingresa tu API Key en la barra superior o en tu Perfil de Instalador / Configurar Cuenta.\n\n*Puedes obtener una clave gratuita en [Google AI Studio](https://aistudio.google.com/app/apikey).*`,
+        timestamp: new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }),
+        isError: true,
+      };
+
+      setMessages((prev) => [...prev, userMsg, noKeyNoticeMsg]);
+      setFaultDescription('');
+      setUploadedPhotos([]);
+      return;
+    }
 
     setMessages((prev) => [...prev, userMsg]);
     setLoading(true);
@@ -523,128 +546,96 @@ export const AiDiagnosticConsultantTab: React.FC<AiDiagnosticConsultantTabProps>
     try {
       let analysisText = '';
 
-      if (activeApiKey) {
-        // Direct call to Gemini 1.5 Flash API (v1beta)
-        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${activeApiKey}`;
+      // Direct call to official Gemini 1.5 Flash API (v1beta)
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${activeApiKey}`;
 
-        // Build continuous chat contents
-        const contents: any[] = [];
+      // Build continuous chat contents
+      const contents: any[] = [];
 
-        // Add history (excluding welcome & error messages)
-        messages
-          .filter((m) => m.id !== 'welcome_init' && !m.isError && m.text.trim())
-          .forEach((m) => {
-            const parts: any[] = [];
-            if (m.images && m.images.length > 0) {
-              m.images.forEach((img) => {
-                parts.push(formatInlineData(img.dataUrl));
-              });
-            }
-            parts.push({ text: m.text });
-            contents.push({
-              role: m.role === 'user' ? 'user' : 'model',
-              parts,
+      // Add history (excluding welcome & error messages)
+      messages
+        .filter((m) => m.id !== 'welcome_init' && !m.isError && m.text.trim())
+        .forEach((m) => {
+          const parts: any[] = [];
+          if (m.images && m.images.length > 0) {
+            m.images.forEach((img) => {
+              parts.push(formatInlineData(img.dataUrl));
             });
+          }
+          parts.push({ text: m.text });
+          contents.push({
+            role: m.role === 'user' ? 'user' : 'model',
+            parts,
           });
-
-        // Add current user turn
-        const currentParts: any[] = [];
-        currentImagesBase64.forEach((dataUrl) => {
-          currentParts.push(formatInlineData(dataUrl));
         });
 
-        let fullPrompt = promptText || 'Análisis técnico y normativo de las fotografías adjuntas.';
-        if (installationType) {
-          fullPrompt = `[Tipo de Instalación: ${installationType}]\n` + fullPrompt;
-        }
-        if (selectedMissingTools.length > 0) {
-          fullPrompt += `\n[Herramientas No Disponibles en Terreno: ${selectedMissingTools.join(', ')}. Sugerir método de descarte seguro alternativo]`;
-        }
-        if (customContext.trim()) {
-          fullPrompt += `\n[Contexto Adicional: ${customContext.trim()}]`;
-        }
+      // Add current user turn
+      const currentParts: any[] = [];
+      currentImagesBase64.forEach((dataUrl) => {
+        currentParts.push(formatInlineData(dataUrl));
+      });
 
-        currentParts.push({ text: fullPrompt });
+      let fullPrompt = promptText || 'Análisis técnico y normativo de las fotografías adjuntas.';
+      if (installationType) {
+        fullPrompt = `[Tipo de Instalación: ${installationType}]\n` + fullPrompt;
+      }
+      if (selectedMissingTools.length > 0) {
+        fullPrompt += `\n[Herramientas No Disponibles en Terreno: ${selectedMissingTools.join(', ')}. Sugerir método de descarte seguro alternativo]`;
+      }
+      if (customContext.trim()) {
+        fullPrompt += `\n[Contexto Adicional: ${customContext.trim()}]`;
+      }
 
-        contents.push({
-          role: 'user',
-          parts: currentParts,
-        });
+      currentParts.push({ text: fullPrompt });
 
-        const systemInstruction = {
-          role: 'user',
-          parts: [
-            {
-              text: 'Eres el Copiloto Eléctrico y Consultor Técnico Senior de NEOVOLT, experto en Ingeniería Eléctrica y normativa chilena SEC (Pliegos Técnicos RIC N°01 al N°19). Analizas fotos de tableros, conexiones, disyuntores y fallas para emitir diagnósticos normativos precisos, guiando en terreno con pasos estructurados, detallando causas probables, medidas de seguridad inmediatas y solución técnica paso a paso con citas normativas RIC.',
-            },
-          ],
-        };
+      contents.push({
+        role: 'user',
+        parts: currentParts,
+      });
 
-        const response = await fetch(endpoint, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
+      const systemInstruction = {
+        role: 'user',
+        parts: [
+          {
+            text: 'Eres el Copiloto Eléctrico y Consultor Técnico Senior de NEOVOLT, experto en Ingeniería Eléctrica y normativa chilena SEC (Pliegos Técnicos RIC N°01 al N°19). Analizas fotos de tableros, conexiones, disyuntores y fallas para emitir diagnósticos normativos precisos, guiando en terreno con pasos estructurados, detallando causas probables, medidas de seguridad inmediatas y solución técnica paso a paso con citas normativas RIC.',
           },
-          body: JSON.stringify({
-            contents,
-            system_instruction: systemInstruction,
-            generationConfig: {
-              temperature: 0.3,
-              maxOutputTokens: 2048,
-            },
-          }),
-        });
+        ],
+      };
 
-        if (!response.ok) {
-          let detailMsg = `Error ${response.status}: ${response.statusText}`;
-          let errorJson: any = null;
-          try {
-            errorJson = await response.json();
-            if (errorJson?.error?.message) {
-              detailMsg = `Error ${errorJson.error.code || response.status} (${errorJson.error.status || 'API_ERROR'}): ${errorJson.error.message}`;
-            } else if (errorJson?.error) {
-              detailMsg = typeof errorJson.error === 'string' ? errorJson.error : JSON.stringify(errorJson.error);
-            }
-          } catch {}
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          contents,
+          system_instruction: systemInstruction,
+          generationConfig: {
+            temperature: 0.3,
+            maxOutputTokens: 2048,
+          },
+        }),
+      });
 
-          throw new Error(detailMsg);
-        }
+      if (!response.ok) {
+        let detailMsg = `Error ${response.status}: ${response.statusText}`;
+        let errorJson: any = null;
+        try {
+          errorJson = await response.json();
+          if (errorJson?.error?.message) {
+            detailMsg = `Error ${errorJson.error.code || response.status} (${errorJson.error.status || 'API_ERROR'}): ${errorJson.error.message}`;
+          } else if (errorJson?.error) {
+            detailMsg = typeof errorJson.error === 'string' ? errorJson.error : JSON.stringify(errorJson.error);
+          }
+        } catch {}
 
-        const resultData = await response.json();
-        analysisText = resultData.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (!analysisText) {
-          throw new Error(`Respuesta vacía o bloqueada por políticas de seguridad de Google: ${JSON.stringify(resultData)}`);
-        }
-      } else {
-        // Fallback to server proxy endpoint
-        const chatHistoryPayload = messages.map((m) => ({
-          role: m.role,
-          text: m.text,
-        }));
+        throw new Error(detailMsg);
+      }
 
-        const res = await fetch('/api/diagnostic-consultant', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            faultDescription: promptText || 'Inspección de imágenes adjuntas.',
-            installationType,
-            missingTools: selectedMissingTools,
-            contextNotes: customContext,
-            userEmail: currentUser.email,
-            customGeminiApiKey: activeApiKey,
-            imagesBase64: currentImagesBase64,
-            chatHistory: chatHistoryPayload,
-          }),
-        });
-
-        const data = await res.json();
-        if (data.analysis) {
-          analysisText = data.analysis;
-        } else if (data.error) {
-          throw new Error(data.error);
-        } else {
-          throw new Error('Respuesta inválida del servidor (sin campo de análisis).');
-        }
+      const resultData = await response.json();
+      analysisText = resultData.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!analysisText) {
+        throw new Error(`Respuesta vacía o bloqueada por políticas de seguridad de Google: ${JSON.stringify(resultData)}`);
       }
 
       const modelMsg: ChatMessage = {
@@ -663,7 +654,7 @@ export const AiDiagnosticConsultantTab: React.FC<AiDiagnosticConsultantTabProps>
       const errorMsg: ChatMessage = {
         id: `err_${Date.now()}`,
         role: 'model',
-        text: `🛑 **Error de la API de Google Gemini:**\n\n\`${exactErrorMsg}\`\n\n*Por favor verifique su API Key en Google AI Studio o ingrésela en el panel.*`,
+        text: `🛑 **Error de la API de Google Gemini:**\n\n\`${exactErrorMsg}\`\n\n*Por favor verifique su API Key en Google AI Studio o ingrésela en el panel de configuración de cuenta/perfil.*`,
         timestamp: new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }),
         isError: true,
       };
@@ -733,21 +724,26 @@ export const AiDiagnosticConsultantTab: React.FC<AiDiagnosticConsultantTabProps>
       return;
     }
 
-    setIsSummarizing(true);
     const activeApiKey = getEffectiveApiKey().trim();
+    if (!activeApiKey) {
+      setShowApiKeyNotice(true);
+      alert('⚠️ Se requiere una Clave de API de Google Gemini para sintetizar informes. Por favor, ingresa tu API Key en la barra superior o en tu Perfil de Instalador.');
+      return;
+    }
+
+    setIsSummarizing(true);
 
     try {
       let generatedSummary = '';
 
-      if (activeApiKey) {
-        // Direct Gemini call for summary
-        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${activeApiKey}`;
-        const chatLogText = messages
-          .filter((m) => !m.isError && m.text.trim())
-          .map((m) => `${m.role === 'user' ? 'Técnico' : 'Copiloto IA'}: ${m.text}`)
-          .join('\n\n');
+      // Direct Gemini 1.5 Flash call for summary
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${activeApiKey}`;
+      const chatLogText = messages
+        .filter((m) => !m.isError && m.text.trim())
+        .map((m) => `${m.role === 'user' ? 'Técnico' : 'Copiloto IA'}: ${m.text}`)
+        .join('\n\n');
 
-        const prompt = `Actúa como un Auditor Eléctrico Autorizado SEC de Chile.
+      const prompt = `Actúa como un Auditor Eléctrico Autorizado SEC de Chile.
 Genera una SÍNTESIS TÉCNICA Y EJECUTIVA de la siguiente conversación de diagnóstico en terreno para adjuntarla directamente al Informe de Obra (Work Report).
 
 DATOS:
@@ -765,41 +761,21 @@ ESTRUCTURA OBLIGATORIA DEL RESUMEN:
 
 Redacta de forma clara, técnica, profesional y en español chileno normativo.`;
 
-        const response = await fetch(endpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { temperature: 0.2, maxOutputTokens: 1024 },
-          }),
-        });
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.2, maxOutputTokens: 1024 },
+        }),
+      });
 
-        if (!response.ok) {
-          throw new Error(`Error en API Gemini al sintetizar: ${response.statusText}`);
-        }
-
-        const data = await response.json();
-        generatedSummary = data.candidates?.[0]?.content?.parts?.[0]?.text;
-      } else {
-        // Call server proxy route
-        const res = await fetch('/api/summarize-diagnostic', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chatHistory: messages.map((m) => ({ role: m.role, text: m.text })),
-            customGeminiApiKey: activeApiKey,
-            installationType,
-            clientName: currentUser.name || 'Cliente Particular',
-          }),
-        });
-
-        const data = await res.json();
-        if (data.summary) {
-          generatedSummary = data.summary;
-        } else {
-          throw new Error(data.error || 'Respuesta no válida al sintetizar.');
-        }
+      if (!response.ok) {
+        throw new Error(`Error en API Gemini al sintetizar: ${response.statusText}`);
       }
+
+      const data = await response.json();
+      generatedSummary = data.candidates?.[0]?.content?.parts?.[0]?.text;
 
       if (generatedSummary) {
         setSummaryResult(generatedSummary);

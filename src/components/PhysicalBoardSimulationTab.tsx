@@ -8,12 +8,13 @@ import {
   ZoomIn, ZoomOut, Maximize2, Move, Plus, Wand2,
   ArrowLeft, ArrowRight, Settings, ShieldCheck, Gauge,
   Eye, EyeOff, ChevronDown, ChevronUp, SlidersHorizontal,
-  Flame, Volume2, VolumeX, RefreshCw, Power
+  Flame, Volume2, VolumeX, RefreshCw, Power, BookOpen
 } from 'lucide-react';
 import { ClientRecord, RoomData, HighAppliance } from '../types';
 import { electricalAudio } from '../utils/electricalAudio';
 
 export type TerminalType = 'L' | 'N' | 'PE' | 'L1' | 'L2' | 'L3';
+export type ProtectionCurve = 'B' | 'C' | 'D' | 'K' | 'Z';
 
 export interface InteractiveTerminal {
   id: string;
@@ -26,7 +27,7 @@ export interface InteractiveTerminal {
 
 export interface InteractiveComponent {
   id: string;
-  type: 'GRID' | 'IGA' | 'RCD' | 'MCB' | 'BAR_N' | 'BAR_PE' | 'LOAD';
+  type: 'GRID' | 'IGA' | 'RCD' | 'MCB' | 'DPS' | 'PILOT_LIGHTS' | 'BAR_N' | 'BAR_PE' | 'LOAD';
   name: string;
   x: number;
   y: number;
@@ -36,9 +37,14 @@ export interface InteractiveComponent {
   ampacity?: number;
   poles?: number;
   dinModules?: number;
+  curve?: ProtectionCurve;
+  icnKa?: number;
   isTripped?: boolean;
   isOff?: boolean;
+  powerStatus?: 'ON' | 'OFF' | 'TRIPPED';
   trippedReason?: string;
+  voltageDisplay?: number;
+  cartridgeStatus?: 'OK' | 'REPLACE';
 }
 
 export interface Wire {
@@ -63,8 +69,27 @@ export interface ActiveElectricalFault {
   toTerminalLabel?: string;
   trippedCompId?: string;
   trippedCompName?: string;
+  affectedCircuit?: string;
+  shortTerminals?: string[];
   iccAmps: number;
   timeMs: number;
+}
+
+export interface SimulationEvent {
+  id: string;
+  timestamp: string; // e.g. "21:56:42"
+  timestampFull: string; // e.g. "15/08/2026 21:56:42"
+  type: 'SHORT_CIRCUIT_LN' | 'SHORT_CIRCUIT_PHASE_PHASE' | 'GROUND_FAULT_PE' | 'NEUTRAL_GROUND_LOOP' | 'REVERSE_POLARITY' | 'OVERLOAD' | 'SURGE_PROTECTED' | 'SURGE_DAMAGED' | 'RCD_TEST_BUTTON' | 'NORMAL_ENERGIZED' | 'MANUAL_OFF' | 'REARM_ALL';
+  category: 'CORTOCIRCUITO' | 'DIFERENCIAL' | 'SOBRETENSION' | 'OPERACION';
+  title: string;
+  description: string;
+  trippedCompId?: string;
+  trippedCompName?: string;
+  affectedCircuit?: string;
+  iccAmps?: number;
+  timeMs?: number;
+  normReference?: string;
+  snapshotDataUrl?: string;
 }
 
 export interface SparkParticle {
@@ -84,6 +109,127 @@ export interface LoadPowerStatus {
   powerWatts: number;
   message: string;
 }
+
+export interface CurveInfo {
+  curve: ProtectionCurve;
+  name: string;
+  magneticRange: string;
+  shortDescription: string;
+  whatItDoes: string;
+  whyUseIt: string;
+  whyNotUseIt: string;
+  recommendedLoads: string[];
+  normReference: string;
+  color: string;
+  badgeBg: string;
+}
+
+export const CURVE_EXPLANATIONS: Record<ProtectionCurve, CurveInfo> = {
+  B: {
+    curve: 'B',
+    name: 'Curva B (Disparo Rápido 3 a 5 In)',
+    magneticRange: '3 a 5 × In (Umbral bajo)',
+    shortDescription: 'Disparo magnético instantáneo de alta sensibilidad.',
+    whatItDoes: 'Actúa casi de inmediato ante pequeños picos de corriente (entre 3 y 5 veces la corriente nominal). Es un disparador magnético de acción veloz pensado para redes donde la corriente de cortocircuito disponible es reducida.',
+    whyUseIt: 'Es fundamental en circuitos con conductores de gran longitud (donde la impedancia del cable limita la corriente de cortocircuito al final de la línea), en instalaciones con generadores portátiles o inversores solares fotovoltaicos con baja capacidad de cortocircuito, y en circuitos de calefacción puramente resistiva sin corrientes de inserción.',
+    whyNotUseIt: 'NO debe instalarse en circuitos con motores (refrigeradores, bombas, lavadoras), transformadores o balastros electrónicos/drivers LED de alta potencia. La corriente de inserción inicial (inrush current) superará los 3 a 5 In y provocará disparos intempestivos o falsas alarmas al encender la carga.',
+    recommendedLoads: ['Líneas de gran longitud (> 35m)', 'Calefactores y termos resistivos', 'Instalaciones solares aisladas (Off-Grid)', 'Generadores de respaldo'],
+    normReference: 'RIC N°02 Punto 5.4 & IEC 60898-1',
+    color: '#eab308',
+    badgeBg: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/40',
+  },
+  C: {
+    curve: 'C',
+    name: 'Curva C (Estándar Universal 5 a 10 In)',
+    magneticRange: '5 a 10 × In (Estándar General)',
+    shortDescription: 'La curva universal recomendada por SEC para uso general residencial y comercial.',
+    whatItDoes: 'Dispara magnéticamente entre 5 y 10 veces la corriente nominal In. Ofrece la zona de tolerancia ideal para los picos normales de arranque de electrodomésticos convencionales manteniendo una protección térmica rigurosa para cables de 1.5 mm², 2.5 mm² y 4.0 mm².',
+    whyUseIt: 'Es la protección obligatoria y recomendada por defecto en el 90% de los circuitos residenciales y comerciales en Chile: alumbrado general, enchufes normales, enchufes de cocina y pequeños motores domésticos (refrigerador, lavadora, microondas).',
+    whyNotUseIt: 'NO se recomienda para cargas industriales pesadas con motores de gran inercia (donde el arranque supera 10 In y disparará el automático), ni en extremos de líneas excesivamente largas donde la corriente de cortocircuito no alcance a superar 5 In.',
+    recommendedLoads: ['Alumbrado General (RIC N°02)', 'Enchufes y Tomas de Corriente 10A/16A', 'Electrodomésticos habituales', 'Oficinas y Comercio'],
+    normReference: 'RIC N°02 Art. 5 (Disyuntores Termomagnéticos) & IEC 60898-1',
+    color: '#10b981',
+    badgeBg: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
+  },
+  D: {
+    curve: 'D',
+    name: 'Curva D (Cargas Altamente Inductivas 10 a 20 In)',
+    magneticRange: '10 a 20 × In (Alta Inercia)',
+    shortDescription: 'Diseñada específicamente para soportar enormes corrientes transitorias de arranque.',
+    whatItDoes: 'Su disparador magnético no actúa hasta alcanzar entre 10 y 20 veces la corriente nominal In. Permite que motores de inducción pesados y transformadores arranquen sin interrumpir el suministro.',
+    whyUseIt: 'Imprescindible en circuitos de fuerza con bombas de agua sumergibles o de pozo profundo, compresores de climatización / HVAC (24k+ BTU), máquinas de soldar eléctricas, motores trifásicos de taller y transformadores de aislamiento.',
+    whyNotUseIt: '¡PELIGRO de usarla en enchufes normales o alumbrado! En un circuito de enchufes domésticos con cable de 2.5 mm², si ocurre un cortocircuito de impedancia moderada, la corriente podría no alcanzar los 10 a 20 In requeridos para el disparo magnético, demorando varios segundos en cortar por calor y provocando un grave sobrecalentamiento o incendio del conductor.',
+    recommendedLoads: ['Bombas de Agua y Pozos Profundos', 'Compresores de Climatización HVAC', 'Motores Eléctricos y Taller', 'Soldadoras Eléctricas'],
+    normReference: 'RIC N°02 Punto 5.6 (Circuitos de Fuerza) & RIC N°09',
+    color: '#06b6d4',
+    badgeBg: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40',
+  },
+  K: {
+    curve: 'K',
+    name: 'Curva K (Aplicaciones Industriales 8 a 14 In)',
+    magneticRange: '8 a 14 × In (Motores Industriales)',
+    shortDescription: 'Curva industrial especializada con disparo térmico sensible y magnético tolerante.',
+    whatItDoes: 'Combina una respuesta magnética elevada (8 a 14 In) para motores pesados con una protección térmica muy ajustada (1.05 a 1.2 In) para salvaguardar bobinados de transformadores.',
+    whyUseIt: 'Transformadores elevadores/reductores, centros de maquinado industrial y líneas con alta reactancia inductiva.',
+    whyNotUseIt: 'No aplicable a circuitos residenciales estándar por costo y falta de selectividad con interruptores residenciales.',
+    recommendedLoads: ['Transformadores Industriales', 'Centros de Maquinado CNC', 'Instalaciones de Fuerza Crítica'],
+    normReference: 'IEC 60947-2 (Uso Industrial)',
+    color: '#8b5cf6',
+    badgeBg: 'bg-purple-500/20 text-purple-300 border-purple-500/40',
+  },
+  Z: {
+    curve: 'Z',
+    name: 'Curva Z (Semiconductores & Electrónica 2 a 3 In)',
+    magneticRange: '2 a 3 × In (Ultra Rápido)',
+    shortDescription: 'Protección ultrarrápida para semiconductores y fuentes electrónicas.',
+    whatItDoes: 'Dispara a partir de tan solo 2 a 3 veces In. Desconecta de forma casi instantánea para evitar la destrucción de componentes electrónicos delicados.',
+    whyUseIt: 'Armarios de control PLC, variadores de frecuencia (VFD), fuentes conmutadas de precisión y circuitos de instrumentación médica o científica.',
+    whyNotUseIt: 'Cualquier carga no electrónica la disparará de inmediato debido a que 2 In es un umbral extremadamente sensible.',
+    recommendedLoads: ['Autómatas Programables (PLC)', 'Variadores de Frecuencia', 'Instrumentación Electrónica de Precisión'],
+    normReference: 'IEC 60947-2 (Electrónica)',
+    color: '#ec4899',
+    badgeBg: 'bg-pink-500/20 text-pink-300 border-pink-500/40',
+  },
+};
+
+export const PILOT_COLOR_PRESETS = {
+  SEC: {
+    id: 'SEC',
+    name: 'Norma Chilena SEC (RIC N°02)',
+    shortName: 'SEC Chile',
+    l: '#ef4444',
+    l1: '#ef4444',
+    l2: '#f59e0b',
+    l3: '#06b6d4',
+    n: '#38bdf8',
+    pe: '#22c55e',
+    description: 'Código de colores oficial de la Superintendencia de Electricidad y Combustibles de Chile (Fase 1: Azul/Rojo/Negro, Neutro: Azul/Blanco, PE: Verde/Amarillo).'
+  },
+  IEC: {
+    id: 'IEC',
+    name: 'Norma Internacional IEC 60446 / Europa',
+    shortName: 'IEC Europa',
+    l: '#b45309',
+    l1: '#b45309',
+    l2: '#475569',
+    l3: '#94a3b8',
+    n: '#38bdf8',
+    pe: '#84cc16',
+    description: 'Estándar armonizado internacional (L1 Marrón, L2 Negro, L3 Gris, N Azul, PE Verde-Amarillo).'
+  },
+  HIGH_CONTRAST: {
+    id: 'HIGH_CONTRAST',
+    name: 'Neón / Alto Contraste Industrial',
+    shortName: 'Neón Industrial',
+    l: '#f43f5e',
+    l1: '#f43f5e',
+    l2: '#eab308',
+    l3: '#a855f7',
+    n: '#38bdf8',
+    pe: '#22c55e',
+    description: 'Paleta de alta visibilidad para cuadros oscuros y verificación rápida en terreno.'
+  }
+};
 
 const DEMO_CLIENTS = [
   {
@@ -178,6 +324,92 @@ export default function InteractiveBoardTab() {
   // Selected Component for Active Border Highlight & Property Editing
   const [selectedCompId, setSelectedCompId] = useState<string | null>(null);
 
+  // Pilot Light Color Customization & Presets
+  const [pilotColorPreset, setPilotColorPreset] = useState<'SEC' | 'IEC' | 'HIGH_CONTRAST'>('SEC');
+  const [showPilotConfigModal, setShowPilotConfigModal] = useState<boolean>(false);
+
+  // Overvoltage / Surge Simulation States
+  const [isSurgeActive, setIsSurgeActive] = useState<boolean>(false);
+  const [surgeEffectType, setSurgeEffectType] = useState<'dps_protected' | 'damaged' | null>(null);
+  const [activeEnergizedTerminals, setActiveEnergizedTerminals] = useState<Set<string>>(new Set());
+
+  // Event Console, Historical Trips & Diagnostic Log States
+  const [simulationEvents, setSimulationEvents] = useState<SimulationEvent[]>([]);
+  const [eventConsoleFilter, setEventConsoleFilter] = useState<'ALL' | 'FAULTS' | 'RCD' | 'SURGE' | 'OPERATIONS'>('ALL');
+  const [isConsoleCollapsed, setIsConsoleCollapsed] = useState<boolean>(false);
+  const [selectedEventSnapshotModal, setSelectedEventSnapshotModal] = useState<SimulationEvent | null>(null);
+
+  // Visual Inspection Mode (Diagnostic Color Wire Highlighting)
+  const [isInspectionModeActive, setIsInspectionModeActive] = useState<boolean>(false);
+
+  // Protection Curves & Voltmeter States
+  const [showCurveModal, setShowCurveModal] = useState<boolean>(false);
+  const [activeCurveTab, setActiveCurveTab] = useState<ProtectionCurve>('C');
+  const [selectedBreakerIdForCurve, setSelectedBreakerIdForCurve] = useState<string | null>(null);
+  const [liveVoltsRms, setLiveVoltsRms] = useState<number>(222.4);
+
+  // Dynamic live voltage subtle fluctuation when energized
+  useEffect(() => {
+    const igaComp = components.find(c => c.type === 'IGA');
+    const isIgaOn = igaComp ? (!igaComp.isOff && !igaComp.isTripped) : true;
+    
+    if (!isEnergySimulated || !isIgaOn) {
+      setLiveVoltsRms(0);
+      return;
+    }
+    const interval = setInterval(() => {
+      const base = supplyType === 'TRIFASICO_380' ? 381.0 : 222.2;
+      const jitter = +(Math.sin(Date.now() / 1200) * 1.2 + (Math.random() * 0.4 - 0.2)).toFixed(1);
+      setLiveVoltsRms(+(base + jitter).toFixed(1));
+    }, 800);
+    return () => clearInterval(interval);
+  }, [isEnergySimulated, supplyType, components]);
+
+  const handleChangeBreakerCurve = (compId: string, newCurve: ProtectionCurve) => {
+    setComponents(prev => prev.map(c => {
+      if (c.id === compId) {
+        const numMatch = c.name.match(/\d+A/);
+        const amp = numMatch ? numMatch[0] : `${c.ampacity || 16}A`;
+        const prefix = c.name.includes('IGA') ? 'IGA' : c.name.split(' ')[0] || 'C1';
+        return {
+          ...c,
+          curve: newCurve,
+          name: c.type === 'MCB' ? `${prefix} ${newCurve}${amp}` : c.name
+        };
+      }
+      return c;
+    }));
+    setSnapNotice(`✓ Curva ${newCurve} asignada a ${components.find(c => c.id === compId)?.name || 'Disyuntor'}.`);
+    setTimeout(() => setSnapNotice(null), 2500);
+  };
+
+  const handleAutoAssignNormativeCurves = () => {
+    setComponents(prev => prev.map((c, idx) => {
+      if (c.type === 'MCB') {
+        const loadName = loads[idx]?.name?.toLowerCase() || '';
+        let curve: ProtectionCurve = 'C';
+        if (loadName.includes('alumbrado') || loadName.includes('ilumin')) {
+          curve = 'B';
+        } else if (loadName.includes('clima') || loadName.includes('bomba') || loadName.includes('motor') || loadName.includes('industrial')) {
+          curve = 'D';
+        } else {
+          curve = 'C';
+        }
+        return {
+          ...c,
+          curve,
+          name: `C${idx + 1} ${curve}${c.ampacity || 16}A`
+        };
+      }
+      if (c.type === 'IGA') {
+        return { ...c, curve: 'C' };
+      }
+      return c;
+    }));
+    setSnapNotice("✓ Curvas normativas SEC auto-asignadas: Curva B para Alumbrado, Curva C para Enchufes y Curva D para Fuerza / Climatización (RIC N°02).");
+    setTimeout(() => setSnapNotice(null), 4000);
+  };
+
   // RIC Normative Feasibility Modal & Errors
   const [showFeasibilityModal, setShowFeasibilityModal] = useState<boolean>(false);
   const [feasibilityErrors, setFeasibilityErrors] = useState<string[]>([]);
@@ -202,6 +434,7 @@ export default function InteractiveBoardTab() {
     }> = [];
 
     if (supplyType === 'TRIFASICO_380') {
+      // 1. Grid to IGA
       steps.push({
         id: 'step_grid_iga_l1',
         title: 'Paso 1: Acometida Fase L1 → IGA (Polo L1)',
@@ -234,9 +467,69 @@ export default function InteractiveBoardTab() {
         toCompId: 'iga', toTermId: 'iga_in_n',
         color: '#38bdf8'
       });
+
+      // 2. DPS Surge Protection
+      const hasDps = components.some(c => c.type === 'DPS');
+      if (hasDps) {
+        steps.push({
+          id: 'step_grid_dps_l1',
+          title: 'Paso 5: Acometida L1 → DPS Sobretensiones (L1)',
+          description: 'Derivación de Fase L1 hacia el descargador de sobretensiones transitorias y permanentes.',
+          fromCompId: 'grid', fromTermId: 'grid_out_l1',
+          toCompId: 'dps', toTermId: 'dps_in_l1',
+          color: '#ef4444'
+        });
+        steps.push({
+          id: 'step_grid_dps_n',
+          title: 'Paso 6: Acometida Neutro N → DPS Sobretensiones (N)',
+          description: 'Derivación de Neutro N hacia el módulo de protección contra sobretensiones.',
+          fromCompId: 'grid', fromTermId: 'grid_out_n',
+          toCompId: 'dps', toTermId: 'dps_in_n',
+          color: '#38bdf8'
+        });
+        steps.push({
+          id: 'step_dps_pe',
+          title: 'Paso 7: DPS Descargador → Barra Tierra PE',
+          description: 'Conexión del borne de descarga a tierra del DPS hacia la barra colectora de protección PE.',
+          fromCompId: 'dps', fromTermId: 'dps_out_pe',
+          toCompId: 'bar_pe', toTermId: 'bar_pe_1',
+          color: '#22c55e'
+        });
+      }
+
+      // 3. Pilot Lights
+      const hasPilots = components.some(c => c.type === 'PILOT_LIGHTS');
+      if (hasPilots) {
+        steps.push({
+          id: 'step_iga_pilots_l1',
+          title: 'Paso 8: IGA Salida L1 → Piloto Señalización L1',
+          description: 'Alimentación de señal luminosa de presencia de fase R / L1.',
+          fromCompId: 'iga', fromTermId: 'iga_out_l1',
+          toCompId: 'pilot_lights', toTermId: 'pilot_in_l1',
+          color: '#ef4444'
+        });
+        steps.push({
+          id: 'step_iga_pilots_l2',
+          title: 'Paso 9: IGA Salida L2 → Piloto Señalización L2',
+          description: 'Alimentación de señal luminosa de presencia de fase S / L2.',
+          fromCompId: 'iga', fromTermId: 'iga_out_l2',
+          toCompId: 'pilot_lights', toTermId: 'pilot_in_l2',
+          color: '#475569'
+        });
+        steps.push({
+          id: 'step_iga_pilots_l3',
+          title: 'Paso 10: IGA Salida L3 → Piloto Señalización L3',
+          description: 'Alimentación de señal luminosa de presencia de fase T / L3.',
+          fromCompId: 'iga', fromTermId: 'iga_out_l3',
+          toCompId: 'pilot_lights', toTermId: 'pilot_in_l3',
+          color: '#d97706'
+        });
+      }
+
+      // 4. IGA to RCD
       steps.push({
         id: 'step_iga_rcd_l1',
-        title: 'Paso 5: IGA Salida L1 → RCD Entrada L1',
+        title: 'Paso 11: IGA Salida L1 → RCD Entrada L1',
         description: 'Alimentación de Fase L1 desde la salida del IGA hacia la entrada del Protector Diferencial (RCD 30mA).',
         fromCompId: 'iga', fromTermId: 'iga_out_l1',
         toCompId: 'rcd', toTermId: 'rcd_in_l1',
@@ -244,7 +537,7 @@ export default function InteractiveBoardTab() {
       });
       steps.push({
         id: 'step_iga_rcd_l2',
-        title: 'Paso 6: IGA Salida L2 → RCD Entrada L2',
+        title: 'Paso 12: IGA Salida L2 → RCD Entrada L2',
         description: 'Alimentación de Fase L2 desde IGA hacia el RCD.',
         fromCompId: 'iga', fromTermId: 'iga_out_l2',
         toCompId: 'rcd', toTermId: 'rcd_in_l2',
@@ -252,7 +545,7 @@ export default function InteractiveBoardTab() {
       });
       steps.push({
         id: 'step_iga_rcd_l3',
-        title: 'Paso 7: IGA Salida L3 → RCD Entrada L3',
+        title: 'Paso 13: IGA Salida L3 → RCD Entrada L3',
         description: 'Alimentación de Fase L3 desde IGA hacia el RCD.',
         fromCompId: 'iga', fromTermId: 'iga_out_l3',
         toCompId: 'rcd', toTermId: 'rcd_in_l3',
@@ -260,7 +553,7 @@ export default function InteractiveBoardTab() {
       });
       steps.push({
         id: 'step_iga_rcd_n',
-        title: 'Paso 8: IGA Salida N → RCD Entrada N',
+        title: 'Paso 14: IGA Salida N → RCD Entrada N',
         description: 'Alimentación de Neutro N desde la salida de IGA hacia el RCD.',
         fromCompId: 'iga', fromTermId: 'iga_out_n',
         toCompId: 'rcd', toTermId: 'rcd_in_n',
@@ -268,13 +561,14 @@ export default function InteractiveBoardTab() {
       });
       steps.push({
         id: 'step_rcd_bar_n',
-        title: 'Paso 9: RCD Salida N → Bornera Barra Neutro',
+        title: 'Paso 15: RCD Salida N → Bornera Barra Neutro',
         description: 'Conecte la salida de Neutro del RCD a la bornera principal aislada de Neutro.',
         fromCompId: 'rcd', fromTermId: 'rcd_out_n',
         toCompId: 'bar_n', toTermId: 'bar_n_0',
         color: '#38bdf8'
       });
     } else {
+      // 1. Monofásico Grid to IGA
       steps.push({
         id: 'step_grid_iga_l',
         title: 'Paso 1: Acometida Fase L → IGA (Polo L)',
@@ -291,9 +585,61 @@ export default function InteractiveBoardTab() {
         toCompId: 'iga', toTermId: 'iga_in_n',
         color: '#38bdf8'
       });
+
+      // 2. DPS Surge Protection
+      const hasDps = components.some(c => c.type === 'DPS');
+      if (hasDps) {
+        steps.push({
+          id: 'step_grid_dps_l',
+          title: 'Paso 3: Acometida L → DPS Sobretensiones (L)',
+          description: 'Derivación de Fase L hacia el protector de sobretensión con voltímetro integrado.',
+          fromCompId: 'grid', fromTermId: 'grid_out_l',
+          toCompId: 'dps', toTermId: 'dps_in_l',
+          color: '#ef4444'
+        });
+        steps.push({
+          id: 'step_grid_dps_n',
+          title: 'Paso 4: Acometida N → DPS Sobretensiones (N)',
+          description: 'Derivación de Neutro N hacia el módulo DPS de protección.',
+          fromCompId: 'grid', fromTermId: 'grid_out_n',
+          toCompId: 'dps', toTermId: 'dps_in_n',
+          color: '#38bdf8'
+        });
+        steps.push({
+          id: 'step_dps_pe',
+          title: 'Paso 5: DPS Descargador → Barra Tierra PE',
+          description: 'Conexión de descarga de sobretensión a tierra PE.',
+          fromCompId: 'dps', fromTermId: 'dps_out_pe',
+          toCompId: 'bar_pe', toTermId: 'bar_pe_1',
+          color: '#22c55e'
+        });
+      }
+
+      // 3. Pilot Lights
+      const hasPilots = components.some(c => c.type === 'PILOT_LIGHTS');
+      if (hasPilots) {
+        steps.push({
+          id: 'step_iga_pilots_l',
+          title: 'Paso 6: IGA Salida L → Piloto Señalización L',
+          description: 'Alimentación del indicador luminoso LED de presencia de fase 220V.',
+          fromCompId: 'iga', fromTermId: 'iga_out_l',
+          toCompId: 'pilot_lights', toTermId: 'pilot_in_l',
+          color: '#ef4444'
+        });
+        steps.push({
+          id: 'step_iga_pilots_n',
+          title: 'Paso 7: IGA Salida N → Piloto Neutro N',
+          description: 'Retorno de neutro para el circuito de luces piloto de señalización.',
+          fromCompId: 'iga', fromTermId: 'iga_out_n',
+          toCompId: 'pilot_lights', toTermId: 'pilot_in_n',
+          color: '#38bdf8'
+        });
+      }
+
+      // 4. IGA to RCD
       steps.push({
         id: 'step_iga_rcd_l',
-        title: 'Paso 3: IGA Salida L → RCD Entrada L',
+        title: 'Paso 8: IGA Salida L → RCD Entrada L',
         description: 'Alimentación de Fase L desde la salida del IGA hacia la entrada del Protector Diferencial RCD.',
         fromCompId: 'iga', fromTermId: 'iga_out_l',
         toCompId: 'rcd', toTermId: 'rcd_in_l',
@@ -301,7 +647,7 @@ export default function InteractiveBoardTab() {
       });
       steps.push({
         id: 'step_iga_rcd_n',
-        title: 'Paso 4: IGA Salida N → RCD Entrada N',
+        title: 'Paso 9: IGA Salida N → RCD Entrada N',
         description: 'Alimentación de Neutro N desde la salida de IGA hacia la entrada N del RCD.',
         fromCompId: 'iga', fromTermId: 'iga_out_n',
         toCompId: 'rcd', toTermId: 'rcd_in_n',
@@ -309,7 +655,7 @@ export default function InteractiveBoardTab() {
       });
       steps.push({
         id: 'step_rcd_bar_n',
-        title: 'Paso 5: RCD Salida N → Bornera Barra Neutro',
+        title: 'Paso 10: RCD Salida N → Bornera Barra Neutro',
         description: 'Conecte el neutro protegido de salida del RCD a la bornera distribuida de Neutro.',
         fromCompId: 'rcd', fromTermId: 'rcd_out_n',
         toCompId: 'bar_n', toTermId: 'bar_n_0',
@@ -739,33 +1085,59 @@ export default function InteractiveBoardTab() {
         ]
       });
 
+      // DPS Surge Protection 4P with digital voltmeter
       newComps.push({
-        id: 'iga', type: 'IGA', name: `IGA 4P ${igaAmps}A`,
-        x: 60, y: 150, w: 140, h: 100, ampacity: igaAmps, dinModules: 4, poles: 4,
+        id: 'dps', type: 'DPS', name: 'DPS 4P + Voltímetro',
+        x: 45, y: 145, w: 110, h: 105, ampacity: 40, dinModules: 4, poles: 4,
+        cartridgeStatus: 'OK',
         terminals: [
-          { id: 'iga_in_l1', type: 'L1', position: 'top', x: 20, y: 0, label: 'L1' },
-          { id: 'iga_in_l2', type: 'L2', position: 'top', x: 55, y: 0, label: 'L2' },
-          { id: 'iga_in_l3', type: 'L3', position: 'top', x: 90, y: 0, label: 'L3' },
-          { id: 'iga_in_n', type: 'N', position: 'top', x: 125, y: 0, label: 'N' },
-          { id: 'iga_out_l1', type: 'L1', position: 'bottom', x: 20, y: 100, label: 'L1' },
-          { id: 'iga_out_l2', type: 'L2', position: 'bottom', x: 55, y: 100, label: 'L2' },
-          { id: 'iga_out_l3', type: 'L3', position: 'bottom', x: 90, y: 100, label: 'L3' },
-          { id: 'iga_out_n', type: 'N', position: 'bottom', x: 125, y: 100, label: 'N' }
+          { id: 'dps_in_l1', type: 'L1', position: 'top', x: 18, y: 0, label: 'L1' },
+          { id: 'dps_in_l2', type: 'L2', position: 'top', x: 42, y: 0, label: 'L2' },
+          { id: 'dps_in_l3', type: 'L3', position: 'top', x: 68, y: 0, label: 'L3' },
+          { id: 'dps_in_n', type: 'N', position: 'top', x: 92, y: 0, label: 'N' },
+          { id: 'dps_out_pe', type: 'PE', position: 'bottom', x: 55, y: 105, label: 'PE' }
+        ]
+      });
+
+      // Modular Pilot Lights 3-Phase
+      newComps.push({
+        id: 'pilot_lights', type: 'PILOT_LIGHTS', name: 'Pilotos R-S-T-PE',
+        x: 160, y: 145, w: 75, h: 105, dinModules: 3, poles: 3,
+        terminals: [
+          { id: 'pilot_in_l1', type: 'L1', position: 'top', x: 18, y: 0, label: 'L1' },
+          { id: 'pilot_in_l2', type: 'L2', position: 'top', x: 38, y: 0, label: 'L2' },
+          { id: 'pilot_in_l3', type: 'L3', position: 'top', x: 58, y: 0, label: 'L3' },
+          { id: 'pilot_in_n', type: 'N', position: 'bottom', x: 38, y: 105, label: 'N' }
+        ]
+      });
+
+      newComps.push({
+        id: 'iga', type: 'IGA', name: `IGA 4P C${igaAmps}A`,
+        x: 240, y: 145, w: 125, h: 105, ampacity: igaAmps, dinModules: 4, poles: 4, curve: 'C',
+        terminals: [
+          { id: 'iga_in_l1', type: 'L1', position: 'top', x: 18, y: 0, label: 'L1' },
+          { id: 'iga_in_l2', type: 'L2', position: 'top', x: 46, y: 0, label: 'L2' },
+          { id: 'iga_in_l3', type: 'L3', position: 'top', x: 74, y: 0, label: 'L3' },
+          { id: 'iga_in_n', type: 'N', position: 'top', x: 102, y: 0, label: 'N' },
+          { id: 'iga_out_l1', type: 'L1', position: 'bottom', x: 18, y: 105, label: 'L1' },
+          { id: 'iga_out_l2', type: 'L2', position: 'bottom', x: 46, y: 105, label: 'L2' },
+          { id: 'iga_out_l3', type: 'L3', position: 'bottom', x: 74, y: 105, label: 'L3' },
+          { id: 'iga_out_n', type: 'N', position: 'bottom', x: 102, y: 105, label: 'N' }
         ]
       });
 
       newComps.push({
         id: 'rcd', type: 'RCD', name: `RCD 4P ${rcdAmps}A 30mA`,
-        x: 220, y: 150, w: 140, h: 100, ampacity: rcdAmps, dinModules: 4, poles: 4,
+        x: 370, y: 145, w: 125, h: 105, ampacity: rcdAmps, dinModules: 4, poles: 4,
         terminals: [
-          { id: 'rcd_in_l1', type: 'L1', position: 'top', x: 20, y: 0, label: 'L1' },
-          { id: 'rcd_in_l2', type: 'L2', position: 'top', x: 55, y: 0, label: 'L2' },
-          { id: 'rcd_in_l3', type: 'L3', position: 'top', x: 90, y: 0, label: 'L3' },
-          { id: 'rcd_in_n', type: 'N', position: 'top', x: 125, y: 0, label: 'N' },
-          { id: 'rcd_out_l1', type: 'L1', position: 'bottom', x: 20, y: 100, label: 'L1' },
-          { id: 'rcd_out_l2', type: 'L2', position: 'bottom', x: 55, y: 100, label: 'L2' },
-          { id: 'rcd_out_l3', type: 'L3', position: 'bottom', x: 90, y: 100, label: 'L3' },
-          { id: 'rcd_out_n', type: 'N', position: 'bottom', x: 125, y: 100, label: 'N' }
+          { id: 'rcd_in_l1', type: 'L1', position: 'top', x: 18, y: 0, label: 'L1' },
+          { id: 'rcd_in_l2', type: 'L2', position: 'top', x: 46, y: 0, label: 'L2' },
+          { id: 'rcd_in_l3', type: 'L3', position: 'top', x: 74, y: 0, label: 'L3' },
+          { id: 'rcd_in_n', type: 'N', position: 'top', x: 102, y: 0, label: 'N' },
+          { id: 'rcd_out_l1', type: 'L1', position: 'bottom', x: 18, y: 105, label: 'L1' },
+          { id: 'rcd_out_l2', type: 'L2', position: 'bottom', x: 46, y: 105, label: 'L2' },
+          { id: 'rcd_out_l3', type: 'L3', position: 'bottom', x: 74, y: 105, label: 'L3' },
+          { id: 'rcd_out_n', type: 'N', position: 'bottom', x: 102, y: 105, label: 'N' }
         ]
       });
     } else {
@@ -779,59 +1151,91 @@ export default function InteractiveBoardTab() {
         ]
       });
 
+      // DPS Surge Protection Monophase with Digital Voltmeter
       newComps.push({
-        id: 'iga', type: 'IGA', name: `IGA Bipolar ${igaAmps}A`,
-        x: 60, y: 150, w: 80, h: 100, ampacity: igaAmps, dinModules: 2, poles: 2,
+        id: 'dps', type: 'DPS', name: 'DPS Sobretensión + Voltímetro',
+        x: 45, y: 145, w: 70, h: 105, ampacity: 20, dinModules: 2, poles: 2,
+        cartridgeStatus: 'OK',
+        terminals: [
+          { id: 'dps_in_l', type: 'L', position: 'top', x: 18, y: 0, label: 'L' },
+          { id: 'dps_in_n', type: 'N', position: 'top', x: 52, y: 0, label: 'N' },
+          { id: 'dps_out_pe', type: 'PE', position: 'bottom', x: 35, y: 105, label: 'PE' }
+        ]
+      });
+
+      // Modular Pilot Lights
+      newComps.push({
+        id: 'pilot_lights', type: 'PILOT_LIGHTS', name: 'Pilotos L / N / PE',
+        x: 120, y: 145, w: 55, h: 105, dinModules: 2, poles: 2,
+        terminals: [
+          { id: 'pilot_in_l', type: 'L', position: 'top', x: 16, y: 0, label: 'L' },
+          { id: 'pilot_in_n', type: 'N', position: 'top', x: 39, y: 0, label: 'N' }
+        ]
+      });
+
+      newComps.push({
+        id: 'iga', type: 'IGA', name: `IGA Bipolar C${igaAmps}A`,
+        x: 180, y: 145, w: 75, h: 105, ampacity: igaAmps, dinModules: 2, poles: 2, curve: 'C',
         terminals: [
           { id: 'iga_in_l', type: 'L', position: 'top', x: 20, y: 0, label: 'L' },
-          { id: 'iga_in_n', type: 'N', position: 'top', x: 60, y: 0, label: 'N' },
-          { id: 'iga_out_l', type: 'L', position: 'bottom', x: 20, y: 100, label: 'L' },
-          { id: 'iga_out_n', type: 'N', position: 'bottom', x: 60, y: 100, label: 'N' }
+          { id: 'iga_in_n', type: 'N', position: 'top', x: 55, y: 0, label: 'N' },
+          { id: 'iga_out_l', type: 'L', position: 'bottom', x: 20, y: 105, label: 'L' },
+          { id: 'iga_out_n', type: 'N', position: 'bottom', x: 55, y: 105, label: 'N' }
         ]
       });
 
       newComps.push({
         id: 'rcd', type: 'RCD', name: `RCD ${rcdAmps}A 30mA`,
-        x: 160, y: 150, w: 80, h: 100, ampacity: rcdAmps, dinModules: 2, poles: 2,
+        x: 260, y: 145, w: 75, h: 105, ampacity: rcdAmps, dinModules: 2, poles: 2,
         terminals: [
           { id: 'rcd_in_l', type: 'L', position: 'top', x: 20, y: 0, label: 'L' },
-          { id: 'rcd_in_n', type: 'N', position: 'top', x: 60, y: 0, label: 'N' },
-          { id: 'rcd_out_l', type: 'L', position: 'bottom', x: 20, y: 100, label: 'L' },
-          { id: 'rcd_out_n', type: 'N', position: 'bottom', x: 60, y: 100, label: 'N' }
+          { id: 'rcd_in_n', type: 'N', position: 'top', x: 55, y: 0, label: 'N' },
+          { id: 'rcd_out_l', type: 'L', position: 'bottom', x: 20, y: 105, label: 'L' },
+          { id: 'rcd_out_n', type: 'N', position: 'bottom', x: 55, y: 105, label: 'N' }
         ]
       });
     }
 
     newComps.push({
       id: 'bar_n', type: 'BAR_N', name: 'Barra Neutro',
-      x: 60, y: 350, w: 320, h: 30, dinModules: 3,
+      x: 45, y: 355, w: 330, h: 30, dinModules: 3,
       terminals: Array.from({length: 8}).map((_, i) => ({
-        id: `bar_n_${i}`, type: 'N', position: 'top', x: 20 + i*38, y: 0, label: 'N'
+        id: `bar_n_${i}`, type: 'N', position: 'top', x: 20 + i*40, y: 0, label: 'N'
       }))
     });
 
     newComps.push({
       id: 'bar_pe', type: 'BAR_PE', name: 'Barra Tierra PE',
-      x: 410, y: 350, w: 320, h: 30, dinModules: 3,
+      x: 395, y: 355, w: 330, h: 30, dinModules: 3,
       terminals: Array.from({length: 8}).map((_, i) => ({
-        id: `bar_pe_${i}`, type: 'PE', position: 'top', x: 20 + i*38, y: 0, label: 'PE'
+        id: `bar_pe_${i}`, type: 'PE', position: 'top', x: 20 + i*40, y: 0, label: 'PE'
       }))
     });
 
-    const startMcbX = st === 'TRIFASICO_380' ? 380 : 260;
+    const startMcbX = st === 'TRIFASICO_380' ? 505 : 345;
     currentLoads.forEach((load, i) => {
       const mcbAmps = load.power >= 3500 ? 25 : load.power >= 2500 ? 20 : load.power >= 1500 ? 16 : 10;
-      const mcbX = startMcbX + (i * 55);
+      const loadNameLower = load.name.toLowerCase();
+      let curve: ProtectionCurve = 'C';
+      if (loadNameLower.includes('alumbrado') || loadNameLower.includes('ilumin')) {
+        curve = 'B';
+      } else if (loadNameLower.includes('clima') || loadNameLower.includes('bomba') || loadNameLower.includes('motor') || loadNameLower.includes('fuerza')) {
+        curve = 'D';
+      } else {
+        curve = 'C';
+      }
+
+      const mcbX = startMcbX + (i * 48);
       newComps.push({
-        id: `mcb_${i}`, type: 'MCB', name: `C${i+1} ${mcbAmps}A`,
-        x: mcbX, y: 150, w: 45, h: 100, ampacity: mcbAmps, dinModules: 1,
+        id: `mcb_${i}`, type: 'MCB', name: `C${i+1} ${curve}${mcbAmps}A`,
+        x: mcbX, y: 145, w: 44, h: 105, ampacity: mcbAmps, dinModules: 1, curve,
         terminals: [
           { id: `mcb_${i}_in_l`, type: 'L', position: 'top', x: 22, y: 0, label: 'L' },
-          { id: `mcb_${i}_out_l`, type: 'L', position: 'bottom', x: 22, y: 100, label: 'L' }
+          { id: `mcb_${i}_out_l`, type: 'L', position: 'bottom', x: 22, y: 105, label: 'L' }
         ]
       });
 
-      const loadX = 60 + (i * 130);
+      const loadX = 50 + (i * 125);
       newComps.push({
         id: `load_comp_${i}`, type: 'LOAD', name: load.name,
         x: loadX, y: 480, w: 110, h: 65, dinModules: 0,
@@ -851,6 +1255,93 @@ export default function InteractiveBoardTab() {
 
     setComponents(alignedComps);
     setInitialComponents(JSON.parse(JSON.stringify(alignedComps)));
+
+    // Auto-generate complete normative wiring layout so the board starts connected and energizable
+    const initialWires: Wire[] = [];
+    let wId = 1;
+
+    if (st === 'TRIFASICO_380') {
+      // Grid -> DPS
+      initialWires.push({ id: `w_${wId++}`, fromCompId: 'grid', fromTermId: 'grid_out_l1', toCompId: 'dps', toTermId: 'dps_in_l1', color: '#ef4444' });
+      initialWires.push({ id: `w_${wId++}`, fromCompId: 'grid', fromTermId: 'grid_out_l2', toCompId: 'dps', toTermId: 'dps_in_l2', color: '#475569' });
+      initialWires.push({ id: `w_${wId++}`, fromCompId: 'grid', fromTermId: 'grid_out_l3', toCompId: 'dps', toTermId: 'dps_in_l3', color: '#d97706' });
+      initialWires.push({ id: `w_${wId++}`, fromCompId: 'grid', fromTermId: 'grid_out_n', toCompId: 'dps', toTermId: 'dps_in_n', color: '#38bdf8' });
+      initialWires.push({ id: `w_${wId++}`, fromCompId: 'dps', fromTermId: 'dps_out_pe', toCompId: 'bar_pe', toTermId: 'bar_pe_in', color: '#22c55e' });
+
+      // Grid -> Pilot Lights
+      initialWires.push({ id: `w_${wId++}`, fromCompId: 'grid', fromTermId: 'grid_out_l1', toCompId: 'pilot_lights', toTermId: 'pilot_in_l1', color: '#ef4444' });
+      initialWires.push({ id: `w_${wId++}`, fromCompId: 'grid', fromTermId: 'grid_out_l2', toCompId: 'pilot_lights', toTermId: 'pilot_in_l2', color: '#475569' });
+      initialWires.push({ id: `w_${wId++}`, fromCompId: 'grid', fromTermId: 'grid_out_l3', toCompId: 'pilot_lights', toTermId: 'pilot_in_l3', color: '#d97706' });
+      initialWires.push({ id: `w_${wId++}`, fromCompId: 'grid', fromTermId: 'grid_out_n', toCompId: 'pilot_lights', toTermId: 'pilot_in_n', color: '#38bdf8' });
+
+      // Grid -> IGA
+      initialWires.push({ id: `w_${wId++}`, fromCompId: 'grid', fromTermId: 'grid_out_l1', toCompId: 'iga', toTermId: 'iga_in_l1', color: '#ef4444' });
+      initialWires.push({ id: `w_${wId++}`, fromCompId: 'grid', fromTermId: 'grid_out_l2', toCompId: 'iga', toTermId: 'iga_in_l2', color: '#475569' });
+      initialWires.push({ id: `w_${wId++}`, fromCompId: 'grid', fromTermId: 'grid_out_l3', toCompId: 'iga', toTermId: 'iga_in_l3', color: '#d97706' });
+      initialWires.push({ id: `w_${wId++}`, fromCompId: 'grid', fromTermId: 'grid_out_n', toCompId: 'iga', toTermId: 'iga_in_n', color: '#38bdf8' });
+
+      // IGA -> RCD
+      initialWires.push({ id: `w_${wId++}`, fromCompId: 'iga', fromTermId: 'iga_out_l1', toCompId: 'rcd', toTermId: 'rcd_in_l1', color: '#ef4444' });
+      initialWires.push({ id: `w_${wId++}`, fromCompId: 'iga', fromTermId: 'iga_out_l2', toCompId: 'rcd', toTermId: 'rcd_in_l2', color: '#475569' });
+      initialWires.push({ id: `w_${wId++}`, fromCompId: 'iga', fromTermId: 'iga_out_l3', toCompId: 'rcd', toTermId: 'rcd_in_l3', color: '#d97706' });
+      initialWires.push({ id: `w_${wId++}`, fromCompId: 'iga', fromTermId: 'iga_out_n', toCompId: 'rcd', toTermId: 'rcd_in_n', color: '#38bdf8' });
+
+      // RCD -> Distribution Bars
+      initialWires.push({ id: `w_${wId++}`, fromCompId: 'rcd', fromTermId: 'rcd_out_l1', toCompId: 'bar_l1', toTermId: 'bar_l1_in', color: '#ef4444' });
+      initialWires.push({ id: `w_${wId++}`, fromCompId: 'rcd', fromTermId: 'rcd_out_l2', toCompId: 'bar_l2', toTermId: 'bar_l2_in', color: '#475569' });
+      initialWires.push({ id: `w_${wId++}`, fromCompId: 'rcd', fromTermId: 'rcd_out_l3', toCompId: 'bar_l3', toTermId: 'bar_l3_in', color: '#d97706' });
+      initialWires.push({ id: `w_${wId++}`, fromCompId: 'rcd', fromTermId: 'rcd_out_n', toCompId: 'bar_n', toTermId: 'bar_n_in', color: '#38bdf8' });
+
+      // Grid PE -> Bar PE
+      initialWires.push({ id: `w_${wId++}`, fromCompId: 'grid', fromTermId: 'grid_out_pe', toCompId: 'bar_pe', toTermId: 'bar_pe_in', color: '#22c55e' });
+
+      // Connect MCBs to Distribution Bars and Loads
+      currentLoads.forEach((_, i) => {
+        const phaseBar = i % 3 === 0 ? 'bar_l1' : i % 3 === 1 ? 'bar_l2' : 'bar_l3';
+        const phaseBarTerm = i % 3 === 0 ? `bar_l1_out_${Math.floor(i / 3) + 1}` : i % 3 === 1 ? `bar_l2_out_${Math.floor(i / 3) + 1}` : `bar_l3_out_${Math.floor(i / 3) + 1}`;
+        const phaseColor = i % 3 === 0 ? '#ef4444' : i % 3 === 1 ? '#475569' : '#d97706';
+
+        initialWires.push({ id: `w_${wId++}`, fromCompId: phaseBar, fromTermId: phaseBarTerm, toCompId: `mcb_${i}`, toTermId: `mcb_${i}_in`, color: phaseColor });
+        initialWires.push({ id: `w_${wId++}`, fromCompId: `mcb_${i}`, fromTermId: `mcb_${i}_out`, toCompId: `load_comp_${i}`, toTermId: `load_${i}_l`, color: phaseColor });
+        initialWires.push({ id: `w_${wId++}`, fromCompId: 'bar_n', fromTermId: `bar_n_out_${i + 1}`, toCompId: `load_comp_${i}`, toTermId: `load_${i}_n`, color: '#38bdf8' });
+        initialWires.push({ id: `w_${wId++}`, fromCompId: 'bar_pe', fromTermId: `bar_pe_out_${i + 1}`, toCompId: `load_comp_${i}`, toTermId: `load_${i}_pe`, color: '#22c55e' });
+      });
+    } else {
+      // Grid -> DPS
+      initialWires.push({ id: `w_${wId++}`, fromCompId: 'grid', fromTermId: 'grid_out_l', toCompId: 'dps', toTermId: 'dps_in_l', color: '#ef4444' });
+      initialWires.push({ id: `w_${wId++}`, fromCompId: 'grid', fromTermId: 'grid_out_n', toCompId: 'dps', toTermId: 'dps_in_n', color: '#38bdf8' });
+      initialWires.push({ id: `w_${wId++}`, fromCompId: 'dps', fromTermId: 'dps_out_pe', toCompId: 'bar_pe', toTermId: 'bar_pe_in', color: '#22c55e' });
+
+      // Grid -> Pilot Lights
+      initialWires.push({ id: `w_${wId++}`, fromCompId: 'grid', fromTermId: 'grid_out_l', toCompId: 'pilot_lights', toTermId: 'pilot_in_l', color: '#ef4444' });
+      initialWires.push({ id: `w_${wId++}`, fromCompId: 'grid', fromTermId: 'grid_out_n', toCompId: 'pilot_lights', toTermId: 'pilot_in_n', color: '#38bdf8' });
+
+      // Grid -> IGA
+      initialWires.push({ id: `w_${wId++}`, fromCompId: 'grid', fromTermId: 'grid_out_l', toCompId: 'iga', toTermId: 'iga_in_l', color: '#ef4444' });
+      initialWires.push({ id: `w_${wId++}`, fromCompId: 'grid', fromTermId: 'grid_out_n', toCompId: 'iga', toTermId: 'iga_in_n', color: '#38bdf8' });
+
+      // IGA -> RCD
+      initialWires.push({ id: `w_${wId++}`, fromCompId: 'iga', fromTermId: 'iga_out_l', toCompId: 'rcd', toTermId: 'rcd_in_l', color: '#ef4444' });
+      initialWires.push({ id: `w_${wId++}`, fromCompId: 'iga', fromTermId: 'iga_out_n', toCompId: 'rcd', toTermId: 'rcd_in_n', color: '#38bdf8' });
+
+      // RCD -> Distribution Bars
+      initialWires.push({ id: `w_${wId++}`, fromCompId: 'rcd', fromTermId: 'rcd_out_l', toCompId: 'bar_l', toTermId: 'bar_l_in', color: '#ef4444' });
+      initialWires.push({ id: `w_${wId++}`, fromCompId: 'rcd', fromTermId: 'rcd_out_n', toCompId: 'bar_n', toTermId: 'bar_n_in', color: '#38bdf8' });
+
+      // Grid PE -> Bar PE
+      initialWires.push({ id: `w_${wId++}`, fromCompId: 'grid', fromTermId: 'grid_out_pe', toCompId: 'bar_pe', toTermId: 'bar_pe_in', color: '#22c55e' });
+
+      // Connect MCBs to Distribution Bars and Loads
+      currentLoads.forEach((_, i) => {
+        initialWires.push({ id: `w_${wId++}`, fromCompId: 'bar_l', fromTermId: `bar_l_out_${i + 1}`, toCompId: `mcb_${i}`, toTermId: `mcb_${i}_in`, color: '#ef4444' });
+        initialWires.push({ id: `w_${wId++}`, fromCompId: `mcb_${i}`, fromTermId: `mcb_${i}_out`, toCompId: `load_comp_${i}`, toTermId: `load_${i}_l`, color: '#ef4444' });
+        initialWires.push({ id: `w_${wId++}`, fromCompId: 'bar_n', fromTermId: `bar_n_out_${i + 1}`, toCompId: `load_comp_${i}`, toTermId: `load_${i}_n`, color: '#38bdf8' });
+        initialWires.push({ id: `w_${wId++}`, fromCompId: 'bar_pe', fromTermId: `bar_pe_out_${i + 1}`, toCompId: `load_comp_${i}`, toTermId: `load_${i}_pe`, color: '#22c55e' });
+      });
+    }
+
+    setWires(initialWires);
+    setIsEnergySimulated(true);
   };
 
   const handleSupplyToggle = (newSupply: 'MONOFASICO_220' | 'TRIFASICO_380') => {
@@ -944,7 +1435,7 @@ export default function InteractiveBoardTab() {
         for (let i = 0; i < 7; i++) {
           addEdge(`${c.id}:bar_pe_${i}`, `${c.id}:bar_pe_${i + 1}`);
         }
-      } else if (c.type === 'IGA' && !c.isTripped && !c.isOff) {
+      } else if (c.type === 'IGA' && !c.isTripped && !c.isOff && c.powerStatus !== 'OFF') {
         if (st === 'TRIFASICO_380') {
           addEdge(`${c.id}:iga_in_l1`, `${c.id}:iga_out_l1`);
           addEdge(`${c.id}:iga_in_l2`, `${c.id}:iga_out_l2`);
@@ -954,7 +1445,7 @@ export default function InteractiveBoardTab() {
           addEdge(`${c.id}:iga_in_l`, `${c.id}:iga_out_l`);
           addEdge(`${c.id}:iga_in_n`, `${c.id}:iga_out_n`);
         }
-      } else if (c.type === 'RCD' && !c.isTripped && !c.isOff) {
+      } else if (c.type === 'RCD' && !c.isTripped && !c.isOff && c.powerStatus !== 'OFF') {
         if (st === 'TRIFASICO_380') {
           addEdge(`${c.id}:rcd_in_l1`, `${c.id}:rcd_out_l1`);
           addEdge(`${c.id}:rcd_in_l2`, `${c.id}:rcd_out_l2`);
@@ -964,7 +1455,7 @@ export default function InteractiveBoardTab() {
           addEdge(`${c.id}:rcd_in_l`, `${c.id}:rcd_out_l`);
           addEdge(`${c.id}:rcd_in_n`, `${c.id}:rcd_out_n`);
         }
-      } else if (c.type === 'MCB' && !c.isTripped && !c.isOff) {
+      } else if (c.type === 'MCB' && !c.isTripped && !c.isOff && c.powerStatus !== 'OFF') {
         const inTerm = c.terminals.find(t => t.id.includes('_in_'));
         const outTerm = c.terminals.find(t => t.id.includes('_out_'));
         if (inTerm && outTerm) {
@@ -1013,6 +1504,10 @@ export default function InteractiveBoardTab() {
       ...phaseNetL, ...phaseNetL1, ...phaseNetL2, ...phaseNetL3
     ]);
 
+    const activeEnergized = new Set<string>([
+      ...allPhaseTerminals, ...neutralNet, ...earthNet
+    ]);
+
     // Check 1: Cortocircuito Franco Fase-Neutro (L - N)
     let lnShortTerminal: string | null = null;
     allPhaseTerminals.forEach(termKey => {
@@ -1030,6 +1525,7 @@ export default function InteractiveBoardTab() {
       // Find closest protecting breaker
       const downstreamMcb = currentComps.find(c => c.type === 'MCB' && (phaseNetL.has(`${c.id}:${c.terminals[0]?.id}`) || c.id === cId));
       const trippedBreaker = downstreamMcb || currentComps.find(c => c.type === 'IGA') || currentComps[0];
+      const circuitName = comp?.type === 'LOAD' ? comp.name : comp?.type === 'MCB' ? `Circuito ${comp.name}` : 'Acometida General L-N';
 
       return {
         hasFault: true,
@@ -1043,6 +1539,8 @@ export default function InteractiveBoardTab() {
           y: coords.y,
           trippedCompId: trippedBreaker?.id,
           trippedCompName: trippedBreaker?.name,
+          affectedCircuit: circuitName,
+          shortTerminals: [lnShortTerminal, 'grid:grid_out_n', `${cId}:${tId}`],
           iccAmps: 6000,
           timeMs: 15,
         },
@@ -1075,6 +1573,8 @@ export default function InteractiveBoardTab() {
             y: coords.y,
             trippedCompId: iga?.id,
             trippedCompName: iga?.name || 'IGA 4P',
+            affectedCircuit: 'Cabecera Trifásica (Cruce L1-L2-L3)',
+            shortTerminals: [interphaseShort, 'grid:grid_out_l1', 'grid:grid_out_l2'],
             iccAmps: 8500,
             timeMs: 12,
           },
@@ -1110,6 +1610,8 @@ export default function InteractiveBoardTab() {
           y: coords.y,
           trippedCompId: rcd?.id,
           trippedCompName: rcd?.name || 'RCD 30mA',
+          affectedCircuit: comp ? `Derivación ${comp.name} a PE` : 'Barra de Tierra PE',
+          shortTerminals: [groundFaultTerminal, 'grid:grid_out_pe', 'bar_pe:bar_pe_0'],
           iccAmps: 2200,
           timeMs: 18,
         },
@@ -1143,6 +1645,8 @@ export default function InteractiveBoardTab() {
             y: coords.y,
             trippedCompId: rcd?.id,
             trippedCompName: rcd?.name || 'RCD 30mA',
+            affectedCircuit: 'Lazo Neutro Post-Diferencial a Barra PE',
+            shortTerminals: [rcdOutNKey, 'bar_pe:bar_pe_0'],
             iccAmps: 350,
             timeMs: 25,
           },
@@ -1203,6 +1707,7 @@ export default function InteractiveBoardTab() {
     return {
       hasFault: false,
       poweredLoads,
+      energizedTerminals: activeEnergized,
     };
   };
 
@@ -1215,6 +1720,7 @@ export default function InteractiveBoardTab() {
       setActiveFault(null);
       setSparkParticles([]);
       setPoweredLoadsMap({});
+      setActiveEnergizedTerminals(new Set());
       setIsScreenShaking(false);
       electricalAudio.stopHum();
       setSnapNotice("🛑 Simulación de energía desactivada.");
@@ -1229,6 +1735,7 @@ export default function InteractiveBoardTab() {
       setIsEnergySimulated(true);
       setActiveFault(result.fault);
       setPoweredLoadsMap({});
+      setActiveEnergizedTerminals(result.energizedTerminals || new Set());
 
       // Play audio effect
       if (result.fault.type === 'GROUND_FAULT_PE' || result.fault.type === 'NEUTRAL_GROUND_LOOP') {
@@ -1246,7 +1753,7 @@ export default function InteractiveBoardTab() {
       if (result.fault.trippedCompId) {
         setComponents(prev => prev.map(c => 
           c.id === result.fault!.trippedCompId
-            ? { ...c, isTripped: true, isOff: true, trippedReason: result.fault!.title }
+            ? { ...c, isTripped: true, isOff: true, powerStatus: 'TRIPPED', trippedReason: result.fault!.title }
             : c
         ));
       }
@@ -1257,6 +1764,7 @@ export default function InteractiveBoardTab() {
       setActiveFault(null);
       setSparkParticles([]);
       setPoweredLoadsMap(result.poweredLoads);
+      setActiveEnergizedTerminals(result.energizedTerminals || new Set());
       electricalAudio.startNormalHum();
       setSnapNotice("⚡ Tablero energizado correctamente: 220V/380V estables sin cortocircuitos (RIC N°02).");
       setTimeout(() => setSnapNotice(null), 3500);
@@ -1269,6 +1777,7 @@ export default function InteractiveBoardTab() {
       ...c,
       isTripped: false,
       isOff: false,
+      powerStatus: 'ON',
       trippedReason: undefined,
     })));
     setActiveFault(null);
@@ -1294,6 +1803,7 @@ export default function InteractiveBoardTab() {
           ...c,
           isTripped: false,
           isOff: nextOff,
+          powerStatus: nextOff ? 'OFF' : 'ON',
           trippedReason: undefined,
         };
       }
@@ -1305,6 +1815,60 @@ export default function InteractiveBoardTab() {
       setTimeout(() => {
         handleToggleEnergySimulation(true);
       }, 100);
+    }
+  };
+
+  // Simulate Overvoltage Surge Event (10kV Transitory Surge per RIC N°02 Art. 5)
+  const handleTriggerSurgeSimulation = () => {
+    const dpsComp = components.find(c => c.type === 'DPS');
+    const isDpsActive = dpsComp && !dpsComp.isOff && !dpsComp.isTripped && dpsComp.powerStatus !== 'OFF';
+    
+    // Check if DPS is connected to phase and PE
+    const dpsConnectedToPe = wires.some(w => 
+      (w.fromCompId === 'dps' && w.fromTermId === 'dps_out_pe') ||
+      (w.toCompId === 'dps' && w.toTermId === 'dps_out_pe')
+    );
+    const dpsConnectedToPhase = wires.some(w => 
+      (w.fromCompId === 'dps' && (w.fromTermId.includes('_l') || w.fromTermId.includes('_l1'))) ||
+      (w.toCompId === 'dps' && (w.toTermId.includes('_l') || w.toTermId.includes('_l1')))
+    );
+
+    setIsSurgeActive(true);
+
+    if (isDpsActive && dpsConnectedToPe && dpsConnectedToPhase) {
+      setSurgeEffectType('dps_protected');
+      electricalAudio.playArcFlashSound();
+      if (dpsComp) {
+        generateSparksAt(dpsComp.x + dpsComp.w / 2, dpsComp.y + dpsComp.h);
+      }
+      setSnapNotice("🛡️ SOBRETENSIÓN ABSORBIDA: El DPS derivó el pico de 10.000V a la toma de Tierra PE (RIC N°02 Art. 5), protegiendo todas las cargas.");
+      setTimeout(() => {
+        setIsSurgeActive(false);
+        setSurgeEffectType(null);
+      }, 3000);
+    } else {
+      setSurgeEffectType('damaged');
+      setIsScreenShaking(true);
+      setTimeout(() => setIsScreenShaking(false), 650);
+      electricalAudio.playArcFlashSound();
+      
+      // Generate sparks across board
+      components.filter(c => c.type === 'MCB' || c.type === 'IGA').forEach(comp => {
+        generateSparksAt(comp.x + comp.w / 2, comp.y + comp.h / 2);
+      });
+
+      // Trip unprotected breakers
+      setComponents(prev => prev.map(c => 
+        (c.type === 'MCB' || c.type === 'IGA')
+          ? { ...c, isTripped: true, isOff: true, powerStatus: 'TRIPPED', trippedReason: 'Daño por Sobretensión Transitoria (Sin DPS Activo)' }
+          : c
+      ));
+
+      setSnapNotice("💥 ¡ANOMALÍA POR SOBRETENSIÓN SIN DPS! Al no contar con descargador DPS activo (RIC N°02), el transitorio de 10kV ingresó al tablero disparando y averiando las protecciones.");
+      setTimeout(() => {
+        setIsSurgeActive(false);
+        setSurgeEffectType(null);
+      }, 3500);
     }
   };
 
@@ -1984,6 +2548,34 @@ export default function InteractiveBoardTab() {
                     )}
                   </button>
 
+                  {/* PRIMARY ACTION: SIMULAR SOBRETENSION / SURGE 10kV */}
+                  <button
+                    onClick={handleTriggerSurgeSimulation}
+                    className={`px-3 py-1.5 rounded-xl font-black text-xs flex items-center gap-1.5 transition-all shadow-md border ${
+                      isSurgeActive
+                        ? 'bg-amber-500 text-slate-950 border-amber-300 shadow-amber-500/50 animate-bounce'
+                        : 'bg-slate-900 hover:bg-slate-800 text-amber-400 border-amber-500/40 hover:border-amber-400'
+                    }`}
+                    title="Simular un pico transitorio de sobretensión de 10kV según RIC N°02. Si el DPS está activo, derivará a tierra; de lo contrario dañará las cargas."
+                  >
+                    <Activity className={`w-3.5 h-3.5 ${isSurgeActive ? 'animate-spin text-slate-950' : 'text-amber-400'}`} />
+                    <span>{isSurgeActive ? 'Sobretensión 10kV ⚡' : 'Probar Sobretensión'}</span>
+                  </button>
+
+                  {/* PILOT LIGHTS COLOR CONFIG BUTTON */}
+                  <button
+                    onClick={() => setShowPilotConfigModal(true)}
+                    className="px-2.5 py-1.5 bg-slate-900/90 hover:bg-slate-800 text-slate-200 hover:text-white rounded-xl border border-slate-700/80 font-bold text-xs flex items-center gap-1.5 shadow-sm transition"
+                    title="Configurar Colores de Luces Piloto (Norma SEC Chilena / IEC)"
+                  >
+                    <div className="flex items-center -space-x-1">
+                      <span className="w-2 h-2 rounded-full bg-red-500 inline-block border border-slate-900" />
+                      <span className="w-2 h-2 rounded-full bg-amber-400 inline-block border border-slate-900" />
+                      <span className="w-2 h-2 rounded-full bg-cyan-400 inline-block border border-slate-900" />
+                    </div>
+                    <span>Luces Piloto</span>
+                  </button>
+
                   {/* AUDIO MUTE TOGGLE */}
                   <button
                     onClick={() => {
@@ -1995,6 +2587,19 @@ export default function InteractiveBoardTab() {
                     title={isAudioMuted ? 'Activar Sonidos de Arco y Protecciones' : 'Silenciar Efectos de Audio'}
                   >
                     {isAudioMuted ? <VolumeX className="w-3.5 h-3.5 text-slate-500" /> : <Volume2 className="w-3.5 h-3.5 text-cyan-400" />}
+                  </button>
+
+                  {/* CURVAS SEC & IEC GUIDE / EDITOR BUTTON */}
+                  <button
+                    onClick={() => {
+                      setSelectedBreakerIdForCurve(components.find(c => c.type === 'MCB' || c.type === 'IGA')?.id || 'iga');
+                      setShowCurveModal(true);
+                    }}
+                    className="px-2.5 py-1.5 bg-slate-900/90 hover:bg-slate-800 text-slate-200 hover:text-white rounded-xl border border-slate-700/80 font-bold text-xs flex items-center gap-1.5 shadow-sm transition"
+                    title="Guía y Editor de Curvas de Disparo (B, C, D, K, Z) según Normativa SEC"
+                  >
+                    <BookOpen className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>Curvas SEC</span>
                   </button>
 
                   {/* SECONDARY ACTIONS GROUP: ICONS WITH TOOLTIPS */}
@@ -2117,6 +2722,26 @@ export default function InteractiveBoardTab() {
 
                 {/* Component Controls */}
                 <div className="flex flex-wrap items-center gap-2">
+                  {/* DIRECT TOGGLE SWITCH BUTTON (ON/OFF/TRIP) */}
+                  {(selectedComponent.type === 'IGA' || selectedComponent.type === 'RCD' || selectedComponent.type === 'MCB' || selectedComponent.type === 'DPS') && (
+                    <button
+                      onClick={() => handleToggleComponentSwitch(selectedComponent.id)}
+                      className={`px-3 py-1 rounded-lg font-black text-xs flex items-center gap-1.5 transition shadow border ${
+                        selectedComponent.isTripped
+                          ? 'bg-rose-600 hover:bg-rose-500 text-white border-rose-400 animate-pulse'
+                          : selectedComponent.isOff
+                          ? 'bg-slate-950 hover:bg-slate-800 text-rose-300 border-rose-500/60'
+                          : 'bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-400'
+                      }`}
+                      title="Haz clic para subir o bajar la palanca y apagar/encender la protección"
+                    >
+                      <Power className="w-3.5 h-3.5" />
+                      <span>
+                        {selectedComponent.isTripped ? 'DISPARADO 💥' : selectedComponent.isOff ? 'INTERRUPTOR: OFF 🔴' : 'INTERRUPTOR: ON 🟢'}
+                      </span>
+                    </button>
+                  )}
+
                   {selectedComponent.ampacity && (
                     <div className="flex items-center gap-1 bg-slate-950 px-2 py-1 rounded-lg border border-slate-800">
                       <span className="text-[10px] text-slate-400 font-bold">Calibre:</span>
@@ -2131,6 +2756,41 @@ export default function InteractiveBoardTab() {
                           {a}A
                         </button>
                       ))}
+                    </div>
+                  )}
+
+                  {/* DIRECT CURVE SELECTOR BUTTONS (B, C, D, K, Z) */}
+                  {(selectedComponent.type === 'MCB' || selectedComponent.type === 'IGA') && (
+                    <div className="flex items-center gap-1 bg-slate-950 px-2 py-1 rounded-lg border border-slate-800">
+                      <span className="text-[10px] text-cyan-400 font-bold">Curva:</span>
+                      {(['B', 'C', 'D', 'K', 'Z'] as ProtectionCurve[]).map(crv => (
+                        <button
+                          key={crv}
+                          onClick={() => handleChangeBreakerCurve(selectedComponent.id, crv)}
+                          className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-black transition ${
+                            (selectedComponent.curve || 'C') === crv
+                              ? crv === 'B' ? 'bg-amber-500 text-slate-950 shadow' :
+                                crv === 'C' ? 'bg-emerald-500 text-slate-950 shadow' :
+                                crv === 'D' ? 'bg-cyan-500 text-slate-950 shadow' :
+                                crv === 'K' ? 'bg-purple-500 text-white shadow' : 'bg-pink-500 text-white shadow'
+                              : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                          }`}
+                          title={`Curva ${crv}: ${CURVE_EXPLANATIONS[crv]?.magneticRange || ''}. Click para asignar a este disyuntor.`}
+                        >
+                          {crv}
+                        </button>
+                      ))}
+                      <button
+                        onClick={() => {
+                          setSelectedBreakerIdForCurve(selectedComponent.id);
+                          setActiveCurveTab(selectedComponent.curve || 'C');
+                          setShowCurveModal(true);
+                        }}
+                        className="ml-1 p-0.5 text-slate-400 hover:text-cyan-300 transition"
+                        title="Ver Guía y Comparativa Técnica SEC"
+                      >
+                        <BookOpen className="w-3.5 h-3.5" />
+                      </button>
                     </div>
                   )}
 
@@ -2430,6 +3090,161 @@ export default function InteractiveBoardTab() {
               {/* TRANSFORMED CANVAS GROUP (PAN & ZOOM) */}
               <g transform={`translate(${pan.x}, ${pan.y}) scale(${zoom})`}>
                 
+                {/* CONSOLA DE MONITOREO Y LUCES PILOTO DE CABECERA (SEC RIC N°02) */}
+                <g transform="translate(40, 10)">
+                  {/* Outer Housing */}
+                  <rect x="0" y="0" width="800" height="115" rx="8" fill="#090d16" stroke="#334155" strokeWidth="2" />
+                  
+                  {/* Panel Header Top Strip */}
+                  <rect x="8" y="8" width="784" height="22" rx="4" fill="#0f172a" stroke="#1e293b" strokeWidth="1" />
+                  <text x="20" y="23" fill="#38bdf8" fontSize="10" fontWeight="900" letterSpacing="0.5">
+                    TABLERO GENERAL DE DISTRIBUCIÓN • MONITOREO Y PROTECCIONES (RIC N°02)
+                  </text>
+                  <text x="780" y="23" textAnchor="end" fill="#94a3b8" fontSize="9" fontWeight="bold" fontFamily="monospace">
+                    {supplyType === 'TRIFASICO_380' ? '3x380V + N + PE • 50Hz' : '1x220V + N + PE • 50Hz'}
+                  </text>
+
+                  {/* SECCIÓN 1: LUCES PILOTO LED DE PRESENCIA DE TENSIÓN */}
+                  <g transform="translate(16, 38)">
+                    <rect x="0" y="0" width={supplyType === 'TRIFASICO_380' ? 240 : 190} height="68" rx="6" fill="#020617" stroke="#1e293b" strokeWidth="1" />
+                    <text x="10" y="14" fill="#94a3b8" fontSize="8" fontWeight="900">LUCES PILOTO DE LÍNEA</text>
+                    
+                    {supplyType === 'TRIFASICO_380' ? (
+                      <g transform="translate(10, 26)">
+                        {/* L1 Rojo */}
+                        <g transform="translate(20, 16)">
+                          <circle cx="0" cy="0" r="10" fill={isEnergySimulated ? "#ef4444" : "#450a0a"} stroke={isEnergySimulated ? "#fca5a5" : "#7f1d1d"} strokeWidth="1.5" filter={isEnergySimulated ? "url(#redGlow)" : undefined} />
+                          <circle cx="-3" cy="-3" r="2.5" fill="#ffffff" opacity={isEnergySimulated ? 0.7 : 0.1} />
+                          <text x="0" y="19" textAnchor="middle" fill={isEnergySimulated ? "#fca5a5" : "#64748b"} fontSize="7" fontWeight="bold">L1 (R)</text>
+                        </g>
+                        {/* L2 Ámbar */}
+                        <g transform="translate(68, 16)">
+                          <circle cx="0" cy="0" r="10" fill={isEnergySimulated ? "#f59e0b" : "#451a03"} stroke={isEnergySimulated ? "#fcd34d" : "#78350f"} strokeWidth="1.5" filter={isEnergySimulated ? "url(#verifierGlow)" : undefined} />
+                          <circle cx="-3" cy="-3" r="2.5" fill="#ffffff" opacity={isEnergySimulated ? 0.7 : 0.1} />
+                          <text x="0" y="19" textAnchor="middle" fill={isEnergySimulated ? "#fcd34d" : "#64748b"} fontSize="7" fontWeight="bold">L2 (S)</text>
+                        </g>
+                        {/* L3 Cian */}
+                        <g transform="translate(116, 16)">
+                          <circle cx="0" cy="0" r="10" fill={isEnergySimulated ? "#06b6d4" : "#083344"} stroke={isEnergySimulated ? "#67e8f9" : "#164e63"} strokeWidth="1.5" filter={isEnergySimulated ? "url(#blueGlow)" : undefined} />
+                          <circle cx="-3" cy="-3" r="2.5" fill="#ffffff" opacity={isEnergySimulated ? 0.7 : 0.1} />
+                          <text x="0" y="19" textAnchor="middle" fill={isEnergySimulated ? "#67e8f9" : "#64748b"} fontSize="7" fontWeight="bold">L3 (T)</text>
+                        </g>
+                        {/* Neutro */}
+                        <g transform="translate(164, 16)">
+                          <circle cx="0" cy="0" r="10" fill={isEnergySimulated ? "#38bdf8" : "#082f49"} stroke={isEnergySimulated ? "#bae6fd" : "#0c4a6e"} strokeWidth="1.5" filter={isEnergySimulated ? "url(#blueGlow)" : undefined} />
+                          <circle cx="-3" cy="-3" r="2.5" fill="#ffffff" opacity={isEnergySimulated ? 0.7 : 0.1} />
+                          <text x="0" y="19" textAnchor="middle" fill={isEnergySimulated ? "#bae6fd" : "#64748b"} fontSize="7" fontWeight="bold">N</text>
+                        </g>
+                        {/* Tierra PE */}
+                        <g transform="translate(208, 16)">
+                          <circle cx="0" cy="0" r="10" fill={isEnergySimulated ? "#22c55e" : "#052e16"} stroke={isEnergySimulated ? "#86efac" : "#14532d"} strokeWidth="1.5" />
+                          <circle cx="-3" cy="-3" r="2.5" fill="#ffffff" opacity={isEnergySimulated ? 0.7 : 0.1} />
+                          <text x="0" y="19" textAnchor="middle" fill={isEnergySimulated ? "#86efac" : "#64748b"} fontSize="7" fontWeight="bold">PE</text>
+                        </g>
+                      </g>
+                    ) : (
+                      <g transform="translate(10, 26)">
+                        {/* Fase L */}
+                        <g transform="translate(30, 16)">
+                          <circle cx="0" cy="0" r="11" fill={isEnergySimulated ? "#ef4444" : "#450a0a"} stroke={isEnergySimulated ? "#fca5a5" : "#7f1d1d"} strokeWidth="1.8" filter={isEnergySimulated ? "url(#redGlow)" : undefined} />
+                          <circle cx="-3.5" cy="-3.5" r="3" fill="#ffffff" opacity={isEnergySimulated ? 0.7 : 0.1} />
+                          <text x="0" y="20" textAnchor="middle" fill={isEnergySimulated ? "#fca5a5" : "#64748b"} fontSize="7.5" fontWeight="bold">FASE (L)</text>
+                        </g>
+                        {/* Neutro N */}
+                        <g transform="translate(85, 16)">
+                          <circle cx="0" cy="0" r="11" fill={isEnergySimulated ? "#38bdf8" : "#082f49"} stroke={isEnergySimulated ? "#bae6fd" : "#0c4a6e"} strokeWidth="1.8" filter={isEnergySimulated ? "url(#blueGlow)" : undefined} />
+                          <circle cx="-3.5" cy="-3.5" r="3" fill="#ffffff" opacity={isEnergySimulated ? 0.7 : 0.1} />
+                          <text x="0" y="20" textAnchor="middle" fill={isEnergySimulated ? "#bae6fd" : "#64748b"} fontSize="7.5" fontWeight="bold">NEUTRO (N)</text>
+                        </g>
+                        {/* Tierra PE */}
+                        <g transform="translate(140, 16)">
+                          <circle cx="0" cy="0" r="11" fill={isEnergySimulated ? "#22c55e" : "#052e16"} stroke={isEnergySimulated ? "#86efac" : "#14532d"} strokeWidth="1.8" />
+                          <circle cx="-3.5" cy="-3.5" r="3" fill="#ffffff" opacity={isEnergySimulated ? 0.7 : 0.1} />
+                          <text x="0" y="20" textAnchor="middle" fill={isEnergySimulated ? "#86efac" : "#64748b"} fontSize="7.5" fontWeight="bold">TIERRA (PE)</text>
+                        </g>
+                      </g>
+                    )}
+                  </g>
+
+                  {/* SECCIÓN 2: MARCADOR DIGITAL MULTÍMETRO OLED INDUSTRIAL */}
+                  <g transform={`translate(${supplyType === 'TRIFASICO_380' ? 275 : 225}, 38)`}>
+                    <rect x="0" y="0" width="310" height="68" rx="6" fill="#020617" stroke="#0ea5e9" strokeWidth="1.5" />
+                    {/* Inner Display Bezel */}
+                    <rect x="4" y="4" width="302" height="60" rx="4" fill="#030712" />
+                    
+                    {/* Live Main Voltage & Frequency */}
+                    <text x="14" y="26" fill="#38bdf8" fontSize="18" fontWeight="900" fontFamily="monospace" filter={isEnergySimulated ? "url(#blueGlow)" : undefined}>
+                      {liveVoltsRms.toFixed(1)} <tspan fontSize="11" fill="#7dd3fc">V CA</tspan>
+                    </text>
+                    <text x="14" y="42" fill="#94a3b8" fontSize="8" fontWeight="bold" fontFamily="monospace">
+                      RMS VOLTAGE • 50.0 Hz
+                    </text>
+                    <text x="14" y="55" fill={isEnergySimulated ? "#4ade80" : "#64748b"} fontSize="8" fontWeight="900">
+                      {isEnergySimulated ? '● ALIMENTACIÓN ACTIVA' : '○ DESENERGIZADO'}
+                    </text>
+
+                    {/* Current, Active Power & Cos Phi */}
+                    <line x1="140" y1="8" x2="140" y2="60" stroke="#1e293b" strokeWidth="1" />
+                    
+                    <text x="150" y="22" fill="#facc15" fontSize="11" fontWeight="900" fontFamily="monospace">
+                      I: {totalLoadCurrent.toFixed(1)} <tspan fontSize="8" fill="#fde047">A</tspan>
+                    </text>
+                    <text x="150" y="38" fill="#a78bfa" fontSize="10" fontWeight="bold" fontFamily="monospace">
+                      P: {(totalLoadPower / 1000).toFixed(2)} <tspan fontSize="8" fill="#c4b5fd">kW</tspan>
+                    </text>
+                    <text x="150" y="52" fill="#cbd5e1" fontSize="9" fontWeight="bold" fontFamily="monospace">
+                      cos φ: 0.93 | {usedDinModules}/{boardCapacity} DIN
+                    </text>
+                  </g>
+
+                  {/* SECCIÓN 3: BOTONES RÁPIDOS DE CONTROL DE ACOMETIDA */}
+                  <g transform={`translate(${supplyType === 'TRIFASICO_380' ? 600 : 550}, 38)`}>
+                    <rect x="0" y="0" width={supplyType === 'TRIFASICO_380' ? 180 : 230} height="68" rx="6" fill="#020617" stroke="#1e293b" strokeWidth="1" />
+                    
+                    {/* Botón Maestro Acometida ON/OFF */}
+                    <g 
+                      transform="translate(10, 12)"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleToggleEnergySimulation();
+                      }}
+                      className="cursor-pointer"
+                    >
+                      <rect 
+                        x="0" y="0" width={supplyType === 'TRIFASICO_380' ? 160 : 100} height="44" rx="6" 
+                        fill={isEnergySimulated ? "#052e16" : "#450a0a"} 
+                        stroke={isEnergySimulated ? "#22c55e" : "#ef4444"} 
+                        strokeWidth="1.5" 
+                      />
+                      <text x={supplyType === 'TRIFASICO_380' ? 80 : 50} y="22" textAnchor="middle" fill="#ffffff" fontSize="9.5" fontWeight="900">
+                        {isEnergySimulated ? '⚡ ENERGÍA ON' : '🔴 ENERGÍA OFF'}
+                      </text>
+                      <text x={supplyType === 'TRIFASICO_380' ? 80 : 50} y="35" textAnchor="middle" fill={isEnergySimulated ? "#86efac" : "#fca5a5"} fontSize="7" fontWeight="bold">
+                        {isEnergySimulated ? 'Click para apagar' : 'Click para encender'}
+                      </text>
+                    </g>
+
+                    {supplyType !== 'TRIFASICO_380' && (
+                      <g 
+                        transform="translate(120, 12)"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRearmAllBreakers();
+                        }}
+                        className="cursor-pointer"
+                      >
+                        <rect x="0" y="0" width="100" height="44" rx="6" fill="#1e293b" stroke="#f59e0b" strokeWidth="1" />
+                        <text x="50" y="22" textAnchor="middle" fill="#fcd34d" fontSize="9" fontWeight="900">
+                          🔄 REARMAR
+                        </text>
+                        <text x="50" y="35" textAnchor="middle" fill="#94a3b8" fontSize="7" fontWeight="bold">
+                          Subir protecciones
+                        </text>
+                      </g>
+                    )}
+                  </g>
+                </g>
+                
                 {/* Rieles DIN */}
                 <rect x="40" y="180" width="800" height="40" rx="2" fill="#334155" stroke="#475569" />
                 <rect x="40" y="310" width="800" height="40" rx="2" fill="#334155" stroke="#475569" />
@@ -2444,17 +3259,23 @@ export default function InteractiveBoardTab() {
                 {wires.map(w => {
                   const p1 = getTerminalAbsoluteCoords(w.fromCompId, w.fromTermId);
                   const p2 = getTerminalAbsoluteCoords(w.toCompId, w.toTermId);
+                  const fromKey = `${w.fromCompId}:${w.fromTermId}`;
+                  const toKey = `${w.toCompId}:${w.toTermId}`;
+                  const isWireEnergized = isEnergySimulated && (activeEnergizedTerminals.has(fromKey) || activeEnergizedTerminals.has(toKey));
+
                   return (
                     <g key={w.id} className="group cursor-pointer">
                       <path
                         d={getWirePath(p1.x, p1.y, p2.x, p2.y)}
                         fill="none"
-                        stroke={w.color}
+                        stroke={isEnergySimulated && !isWireEnergized ? '#475569' : w.color}
                         strokeWidth="3.5"
                         strokeLinecap="round"
+                        opacity={isEnergySimulated && !isWireEnergized ? 0.35 : 1}
+                        strokeDasharray={isEnergySimulated && !isWireEnergized ? "4,4" : undefined}
                       />
-                      {/* ELECTRIC PULSE ANIMATION WHEN ENERGIZED */}
-                      {isEnergySimulated && (
+                      {/* ELECTRIC PULSE ANIMATION WHEN ENERGIZED & HAS REAL CONTINUITY */}
+                      {isEnergySimulated && isWireEnergized && (
                         <path
                           d={getWirePath(p1.x, p1.y, p2.x, p2.y)}
                           fill="none"
@@ -2576,40 +3397,286 @@ export default function InteractiveBoardTab() {
                         <rect x={0} y={0} width={comp.w} height={comp.h} fill="#1e293b" rx="8" stroke="#64748b" strokeWidth="2" />
                       ) : comp.type === 'GRID' ? (
                         <rect x={0} y={0} width={comp.w} height={comp.h} fill="#334155" rx="8" stroke="#94a3b8" strokeWidth="2" />
+                      ) : comp.type === 'DPS' ? (
+                        <g>
+                          <rect x={0} y={0} width={comp.w} height={comp.h} fill="#0b132b" rx="6" stroke="#0ea5e9" strokeWidth="2" />
+                          {/* Metal DIN top & bottom grooves */}
+                          <rect x={2} y={12} width={comp.w - 4} height={2} fill="#1e293b" />
+                          <rect x={2} y={comp.h - 14} width={comp.w - 4} height={2} fill="#1e293b" />
+                        </g>
+                      ) : comp.type === 'PILOT_LIGHTS' ? (
+                        <g>
+                          <rect x={0} y={0} width={comp.w} height={comp.h} fill="#090d16" rx="6" stroke="#f59e0b" strokeWidth="2" />
+                          <rect x={2} y={12} width={comp.w - 4} height={2} fill="#1e293b" />
+                        </g>
                       ) : (
                         <rect x={0} y={0} width={comp.w} height={comp.h} fill="#0f172a" rx="6" stroke={comp.isTripped ? "#ef4444" : "#475569"} strokeWidth="2" />
+                      )}
+
+                      {/* DPS DIGITAL LED VOLTMETER & STATUS DISPLAY */}
+                      {comp.type === 'DPS' && (
+                        <g transform="translate(0, 0)">
+                          {/* LCD Screen Display Frame */}
+                          <rect 
+                            x={6} 
+                            y={24} 
+                            width={comp.w - 12} 
+                            height={26} 
+                            rx={4} 
+                            fill="#020617" 
+                            stroke={isSurgeActive ? "#facc15" : isEnergySimulated && !comp.isOff ? "#38bdf8" : "#334155"} 
+                            strokeWidth={1.5} 
+                          />
+                          
+                          {/* Live RMS Voltage Readout / Surge Status */}
+                          <text 
+                            x={comp.w / 2} 
+                            y={40} 
+                            textAnchor="middle" 
+                            fill={isSurgeActive ? "#fde047" : isEnergySimulated && !comp.isOff ? "#38bdf8" : "#475569"} 
+                            fontSize={isSurgeActive ? (comp.w > 80 ? "10" : "8") : (comp.w > 80 ? "13" : "11")} 
+                            fontWeight="900" 
+                            fontFamily="monospace"
+                            filter={isSurgeActive ? "url(#verifierGlow)" : isEnergySimulated && !comp.isOff ? "url(#blueGlow)" : undefined}
+                            style={{ pointerEvents: 'none' }}
+                          >
+                            {isSurgeActive ? '10kV CLAMP ⚡' : isEnergySimulated && !comp.isOff ? `${liveVoltsRms} V` : '0.0 V'}
+                          </text>
+
+                          {/* Technical sub-indicator */}
+                          <text 
+                            x={comp.w / 2} 
+                            y={48} 
+                            textAnchor="middle" 
+                            fill={isSurgeActive ? "#f59e0b" : isEnergySimulated && !comp.isOff ? "#0284c7" : "#334155"} 
+                            fontSize="5.5" 
+                            fontWeight="bold" 
+                            fontFamily="monospace"
+                            style={{ pointerEvents: 'none' }}
+                          >
+                            {isSurgeActive ? 'SURGE TO PE • 1.5kV Up' : '50.0 Hz • SPD T2 20/40kA'}
+                          </text>
+
+                          {/* Cartridge Status Indicators */}
+                          <g transform={`translate(${comp.w / 2 - (comp.w > 80 ? 30 : 20)}, 56)`}>
+                            <rect x={0} y={0} width={comp.w > 80 ? 26 : 18} height={10} rx={2} fill={isSurgeActive ? "#854d0e" : "#052e16"} stroke={isSurgeActive ? "#facc15" : "#22c55e"} strokeWidth={0.8} />
+                            <text x={comp.w > 80 ? 13 : 9} y={7.5} textAnchor="middle" fill={isSurgeActive ? "#fde047" : "#4ade80"} fontSize="6" fontWeight="bold">L • {isSurgeActive ? 'SURGE' : 'OK'}</text>
+                          </g>
+                          <g transform={`translate(${comp.w / 2 + (comp.w > 80 ? 4 : 2)}, 56)`}>
+                            <rect x={0} y={0} width={comp.w > 80 ? 26 : 18} height={10} rx={2} fill={isSurgeActive ? "#854d0e" : "#052e16"} stroke={isSurgeActive ? "#facc15" : "#22c55e"} strokeWidth={0.8} />
+                            <text x={comp.w > 80 ? 13 : 9} y={7.5} textAnchor="middle" fill={isSurgeActive ? "#fde047" : "#4ade80"} fontSize="6" fontWeight="bold">N • {isSurgeActive ? 'SURGE' : 'OK'}</text>
+                          </g>
+
+                          {/* DPS ON/OFF Switch Lever */}
+                          <g 
+                            transform={`translate(${comp.w / 2 - 12}, 70)`}
+                            onMouseDown={(e) => {
+                              e.stopPropagation();
+                            }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleToggleComponentSwitch(comp.id);
+                            }}
+                            className="cursor-pointer"
+                          >
+                            <rect x={0} y={0} width={24} height={22} rx={4} fill="#020617" stroke="#334155" strokeWidth={1} />
+                            {comp.isOff ? (
+                              <g>
+                                <rect x={2} y={11} width={20} height={9} rx={2} fill="#475569" stroke="#94a3b8" strokeWidth={0.8} />
+                                <text x={12} y={18} textAnchor="middle" fill="#cbd5e1" fontSize="7" fontWeight="900">OFF</text>
+                              </g>
+                            ) : (
+                              <g>
+                                <rect x={2} y={2} width={20} height={9} rx={2} fill="#0284c7" stroke="#38bdf8" strokeWidth={0.8} />
+                                <text x={12} y={9} textAnchor="middle" fill="#ffffff" fontSize="7" fontWeight="900">ON</text>
+                              </g>
+                            )}
+                          </g>
+                        </g>
+                      )}
+
+                      {/* PILOT LIGHTS MODULAR DIN COMPONENT */}
+                      {comp.type === 'PILOT_LIGHTS' && (
+                        <g 
+                          transform="translate(0, 0)"
+                          className="cursor-pointer group/pilots"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setShowPilotConfigModal(true);
+                          }}
+                        >
+                          <title>Luces Piloto DIN: Click para cambiar colores y normas (SEC / IEC)</title>
+                          {supplyType === 'TRIFASICO_380' ? (
+                            <g transform="translate(0, 26)">
+                              {/* L1 Jewel */}
+                              <g transform={`translate(${comp.w * 0.22}, 14)`}>
+                                <circle 
+                                  cx={0} cy={0} r={8} 
+                                  fill={isEnergySimulated && !components.find(c => c.type === 'IGA')?.isOff ? PILOT_COLOR_PRESETS[pilotColorPreset].l1 : "#1e293b"} 
+                                  stroke={isEnergySimulated && !components.find(c => c.type === 'IGA')?.isOff ? "#ffffff" : "#475569"} 
+                                  strokeWidth={1.5}
+                                  filter={isEnergySimulated && !components.find(c => c.type === 'IGA')?.isOff ? "url(#redGlow)" : undefined}
+                                />
+                                <text x={0} y={14} textAnchor="middle" fill={isEnergySimulated && !components.find(c => c.type === 'IGA')?.isOff ? "#ffffff" : "#64748b"} fontSize="6.5" fontWeight="bold">L1</text>
+                              </g>
+                              {/* L2 Jewel */}
+                              <g transform={`translate(${comp.w * 0.5}, 14)`}>
+                                <circle 
+                                  cx={0} cy={0} r={8} 
+                                  fill={isEnergySimulated && !components.find(c => c.type === 'IGA')?.isOff ? PILOT_COLOR_PRESETS[pilotColorPreset].l2 : "#1e293b"} 
+                                  stroke={isEnergySimulated && !components.find(c => c.type === 'IGA')?.isOff ? "#ffffff" : "#475569"} 
+                                  strokeWidth={1.5}
+                                  filter={isEnergySimulated && !components.find(c => c.type === 'IGA')?.isOff ? "url(#verifierGlow)" : undefined}
+                                />
+                                <text x={0} y={14} textAnchor="middle" fill={isEnergySimulated && !components.find(c => c.type === 'IGA')?.isOff ? "#ffffff" : "#64748b"} fontSize="6.5" fontWeight="bold">L2</text>
+                              </g>
+                              {/* L3 Jewel */}
+                              <g transform={`translate(${comp.w * 0.78}, 14)`}>
+                                <circle 
+                                  cx={0} cy={0} r={8} 
+                                  fill={isEnergySimulated && !components.find(c => c.type === 'IGA')?.isOff ? PILOT_COLOR_PRESETS[pilotColorPreset].l3 : "#1e293b"} 
+                                  stroke={isEnergySimulated && !components.find(c => c.type === 'IGA')?.isOff ? "#ffffff" : "#475569"} 
+                                  strokeWidth={1.5}
+                                  filter={isEnergySimulated && !components.find(c => c.type === 'IGA')?.isOff ? "url(#blueGlow)" : undefined}
+                                />
+                                <text x={0} y={14} textAnchor="middle" fill={isEnergySimulated && !components.find(c => c.type === 'IGA')?.isOff ? "#ffffff" : "#64748b"} fontSize="6.5" fontWeight="bold">L3</text>
+                              </g>
+                            </g>
+                          ) : (
+                            <g transform="translate(0, 26)">
+                              {/* Phase L Jewel */}
+                              <g transform={`translate(${comp.w * 0.3}, 18)`}>
+                                <circle 
+                                  cx={0} cy={0} r={9} 
+                                  fill={isEnergySimulated && !components.find(c => c.type === 'IGA')?.isOff ? PILOT_COLOR_PRESETS[pilotColorPreset].l : "#1e293b"} 
+                                  stroke={isEnergySimulated && !components.find(c => c.type === 'IGA')?.isOff ? "#ffffff" : "#475569"} 
+                                  strokeWidth={1.5}
+                                  filter={isEnergySimulated && !components.find(c => c.type === 'IGA')?.isOff ? "url(#redGlow)" : undefined}
+                                />
+                                <text x={0} y={16} textAnchor="middle" fill={isEnergySimulated && !components.find(c => c.type === 'IGA')?.isOff ? "#ffffff" : "#64748b"} fontSize="7" fontWeight="bold">FASE L</text>
+                              </g>
+                              {/* Neutral N Jewel */}
+                              <g transform={`translate(${comp.w * 0.7}, 18)`}>
+                                <circle 
+                                  cx={0} cy={0} r={9} 
+                                  fill={isEnergySimulated && !components.find(c => c.type === 'IGA')?.isOff ? PILOT_COLOR_PRESETS[pilotColorPreset].n : "#1e293b"} 
+                                  stroke={isEnergySimulated && !components.find(c => c.type === 'IGA')?.isOff ? "#ffffff" : "#475569"} 
+                                  strokeWidth={1.5}
+                                  filter={isEnergySimulated && !components.find(c => c.type === 'IGA')?.isOff ? "url(#blueGlow)" : undefined}
+                                />
+                                <text x={0} y={16} textAnchor="middle" fill={isEnergySimulated && !components.find(c => c.type === 'IGA')?.isOff ? "#ffffff" : "#64748b"} fontSize="7" fontWeight="bold">NEUTRO</text>
+                              </g>
+                            </g>
+                          )}
+                          <text x={comp.w / 2} y={comp.h - 18} textAnchor="middle" fill="#64748b" fontSize="6" fontWeight="bold">
+                            {PILOT_COLOR_PRESETS[pilotColorPreset].shortName} ⚙️
+                          </text>
+                        </g>
                       )}
 
                       {/* MECHANICAL DIN SWITCH LEVER & STATUS FOR BREAKERS (IGA, RCD, MCB) */}
                       {(comp.type === 'IGA' || comp.type === 'RCD' || comp.type === 'MCB') && (
                         <g 
-                          transform={`translate(${comp.w / 2 - 12}, 48)`}
+                          transform={`translate(${comp.w / 2 - 14}, 46)`}
+                          onMouseDown={(e) => {
+                            e.stopPropagation();
+                          }}
                           onClick={(e) => {
                             e.stopPropagation();
                             handleToggleComponentSwitch(comp.id);
                           }}
                           className="cursor-pointer"
                         >
+                          <title>{comp.isTripped ? 'Disparo mecánico: Click para rearmar' : comp.isOff ? 'Protección en OFF: Click para encender (ON)' : 'Protección en ON: Click para apagar (OFF)'}</title>
                           {/* Switch recess slot */}
-                          <rect x={0} y={0} width={24} height={32} rx={3} fill="#020617" stroke="#334155" strokeWidth={1} />
+                          <rect x={0} y={0} width={28} height={36} rx={4} fill="#020617" stroke={comp.isTripped ? "#ef4444" : comp.isOff ? "#64748b" : "#22c55e"} strokeWidth={1.5} />
                           
                           {/* Switch handle lever: UP (ON / Green), DOWN (OFF / Slate), TRIPPED (Down/Red) */}
                           {comp.isTripped ? (
                             <g>
-                              <rect x={2} y={16} width={20} height={14} rx={2} fill="#ef4444" stroke="#fca5a5" strokeWidth={1} />
-                              <text x={12} y={26} textAnchor="middle" fill="#ffffff" fontSize="7" fontWeight="900" style={{ pointerEvents: 'none' }}>TRIP</text>
+                              <rect x={2} y={18} width={24} height={16} rx={3} fill="#ef4444" stroke="#fca5a5" strokeWidth={1} filter="url(#redGlow)" />
+                              <text x={14} y={29} textAnchor="middle" fill="#ffffff" fontSize="8" fontWeight="900" style={{ pointerEvents: 'none' }}>TRIP</text>
                             </g>
                           ) : comp.isOff ? (
                             <g>
-                              <rect x={2} y={16} width={20} height={14} rx={2} fill="#475569" stroke="#94a3b8" strokeWidth={1} />
-                              <text x={12} y={26} textAnchor="middle" fill="#cbd5e1" fontSize="7" fontWeight="900" style={{ pointerEvents: 'none' }}>OFF</text>
+                              <rect x={2} y={18} width={24} height={16} rx={3} fill="#334155" stroke="#94a3b8" strokeWidth={1} />
+                              <text x={14} y={29} textAnchor="middle" fill="#f87171" fontSize="8" fontWeight="900" style={{ pointerEvents: 'none' }}>OFF</text>
                             </g>
                           ) : (
                             <g>
-                              <rect x={2} y={2} width={20} height={14} rx={2} fill="#22c55e" stroke="#86efac" strokeWidth={1} />
-                              <text x={12} y={12} textAnchor="middle" fill="#052e16" fontSize="7" fontWeight="900" style={{ pointerEvents: 'none' }}>ON</text>
+                              <rect x={2} y={2} width={24} height={16} rx={3} fill="#16a34a" stroke="#86efac" strokeWidth={1} />
+                              <text x={14} y={13} textAnchor="middle" fill="#ffffff" fontSize="8" fontWeight="900" style={{ pointerEvents: 'none' }}>ON</text>
                             </g>
                           )}
+                        </g>
+                      )}
+
+                      {/* RCD TEST BUTTON [ T ] */}
+                      {comp.type === 'RCD' && (
+                        <g 
+                          transform={`translate(${comp.w / 2 - (comp.w > 90 ? 36 : 24)}, 52)`}
+                          onMouseDown={(e) => {
+                            e.stopPropagation();
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            electricalAudio.playBreakerTripSound();
+                            setComponents(prev => prev.map(c => c.id === comp.id ? { ...c, isTripped: true, isOff: true, powerStatus: 'TRIPPED' } : c));
+                            setSnapNotice("⚠️ Prueba de Diferencial [ T ]: Disparo por simulación de fuga calibrada (30mA).");
+                            setTimeout(() => setSnapNotice(null), 3000);
+                          }}
+                          className="cursor-pointer"
+                        >
+                          <title>Botón de Test Diferencial (RIC N°02)</title>
+                          <circle cx={7} cy={7} r={7} fill="#1e293b" stroke="#f59e0b" strokeWidth={1.2} />
+                          <text x={7} y={10.5} textAnchor="middle" fill="#fcd34d" fontSize="7.5" fontWeight="900">T</text>
+                        </g>
+                      )}
+
+                      {/* PROTECTION CURVE BADGE (CLICKABLE FOR MCB & IGA) */}
+                      {(comp.type === 'MCB' || comp.type === 'IGA') && comp.curve && (
+                        <g 
+                          transform={`translate(${comp.w / 2}, 33)`}
+                          onMouseDown={(e) => {
+                            e.stopPropagation();
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedBreakerIdForCurve(comp.id);
+                            setActiveCurveTab(comp.curve || 'C');
+                            setShowCurveModal(true);
+                          }}
+                          className="cursor-pointer group/curve"
+                        >
+                          <title>{`Curva ${comp.curve}: Click para cambiar curva o ver guía técnica`}</title>
+                          <rect 
+                            x={-17} 
+                            y={-6} 
+                            width={34} 
+                            height={13} 
+                            rx={3} 
+                            fill={
+                              comp.curve === 'B' ? '#ca8a04' :
+                              comp.curve === 'C' ? '#059669' :
+                              comp.curve === 'D' ? '#0891b2' :
+                              comp.curve === 'K' ? '#7c3aed' : '#db2777'
+                            } 
+                            stroke="#ffffff" 
+                            strokeWidth={0.8}
+                          />
+                          <text x={0} y={3.5} textAnchor="middle" fill="#ffffff" fontSize="8" fontWeight="900" style={{ pointerEvents: 'none' }}>
+                            {comp.curve}{comp.ampacity || 16}A
+                          </text>
+                        </g>
+                      )}
+
+                      {/* BREAKING CAPACITY LABEL (Icn 6000A / 4500A) */}
+                      {(comp.type === 'MCB' || comp.type === 'IGA') && (
+                        <g transform={`translate(${comp.w / 2}, ${comp.h - 10})`}>
+                          <rect x={-14} y={-5} width={28} height={8} rx={1} fill="#020617" stroke="#475569" strokeWidth={0.5} />
+                          <text x={0} y={1} textAnchor="middle" fill="#94a3b8" fontSize="5" fontWeight="bold" fontFamily="monospace">
+                            6000 [3]
+                          </text>
                         </g>
                       )}
 
@@ -2729,18 +3796,20 @@ export default function InteractiveBoardTab() {
                         />
                       )}
 
-                      {/* Label */}
-                      <text 
-                        x={comp.w/2} 
-                        y={comp.type.startsWith('BAR') ? 20 : comp.type === 'GRID' ? 32 : (comp.type === 'IGA' || comp.type === 'RCD' || comp.type === 'MCB') ? 24 : 40} 
-                        textAnchor="middle" 
-                        fill={validation.hasError ? "#fda4af" : "#f8fafc"} 
-                        fontSize={comp.type.startsWith('BAR') ? 11 : 10} 
-                        fontWeight="bold"
-                        style={{ pointerEvents: 'none' }}
-                      >
-                        {comp.name}
-                      </text>
+                      {/* Non-protection Label (Bars, Grid, Loads only) */}
+                      {comp.type !== 'IGA' && comp.type !== 'RCD' && comp.type !== 'MCB' && comp.type !== 'DPS' && (
+                        <text 
+                          x={comp.w/2} 
+                          y={comp.type.startsWith('BAR') ? 20 : comp.type === 'GRID' ? 32 : 40} 
+                          textAnchor="middle" 
+                          fill={validation.hasError ? "#fda4af" : "#f8fafc"} 
+                          fontSize={comp.type.startsWith('BAR') ? 11 : 10} 
+                          fontWeight="bold"
+                          style={{ pointerEvents: 'none' }}
+                        >
+                          {comp.name}
+                        </text>
+                      )}
 
                       {/* NORMATIVE ERROR FLOATING TOOLTIP */}
                       {validation.hasError && (isHovered || isSelected || draggingCompId === comp.id) && validation.message && (
@@ -3130,6 +4199,430 @@ export default function InteractiveBoardTab() {
                   </button>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CURVE GUIDE & BREAKER PROTECTION CURVE EDITOR MODAL (SEC & IEC 60898-1) */}
+      {showCurveModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-slate-900 border-2 border-cyan-500/80 rounded-2xl max-w-4xl w-full p-6 shadow-2xl space-y-5 relative max-h-[92vh] overflow-y-auto custom-scrollbar">
+            
+            {/* MODAL HEADER */}
+            <div className="flex items-start justify-between border-b border-slate-800 pb-3.5">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-cyan-950/80 text-cyan-400 rounded-xl border border-cyan-800 shrink-0">
+                  <BookOpen className="w-6 h-6 text-cyan-400" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-cyan-300 uppercase tracking-widest font-mono font-black">
+                      Normativa SEC • RIC N°02 / RIC N°09 &amp; IEC 60898-1
+                    </span>
+                  </div>
+                  <h3 className="text-base sm:text-lg font-black text-white">
+                    Guía Técnica &amp; Editor de Curvas de Disparo (B, C, D, K, Z)
+                  </h3>
+                  <p className="text-xs text-slate-300 mt-0.5">
+                    Aprende qué hace cada curva, cuándo exigirla por normativa y por qué usar una u otra según el tipo de carga instalada.
+                  </p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowCurveModal(false)} 
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* BREAKER SELECTION & AUTO-ASSIGNMENT ROW */}
+            <div className="bg-slate-950 border border-slate-800 p-3.5 rounded-xl flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                  <SlidersHorizontal className="w-4 h-4 text-cyan-400" />
+                  <span>Disyuntor a Configurar:</span>
+                </span>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {components
+                    .filter(c => c.type === 'MCB' || c.type === 'IGA')
+                    .map(b => (
+                      <button
+                        key={b.id}
+                        onClick={() => {
+                          setSelectedBreakerIdForCurve(b.id);
+                          setActiveCurveTab(b.curve || 'C');
+                        }}
+                        className={`px-3 py-1 rounded-lg text-xs font-mono font-bold transition flex items-center gap-1.5 ${
+                          selectedBreakerIdForCurve === b.id
+                            ? 'bg-cyan-500 text-slate-950 shadow-md ring-2 ring-cyan-300'
+                            : 'bg-slate-900 border border-slate-800 text-slate-300 hover:text-white hover:border-slate-700'
+                        }`}
+                      >
+                        <span>{b.name}</span>
+                        <span className={`px-1.5 py-0.2 rounded text-[10px] ${
+                          selectedBreakerIdForCurve === b.id ? 'bg-slate-950 text-cyan-300' : 'bg-slate-800 text-slate-400'
+                        }`}>
+                          {b.curve || 'C'}
+                        </span>
+                      </button>
+                    ))}
+                </div>
+              </div>
+
+              <button
+                onClick={handleAutoAssignNormativeCurves}
+                className="px-3.5 py-1.5 bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white font-bold rounded-xl text-xs shadow-md transition flex items-center gap-1.5"
+                title="Asigna automáticamente Curva B a iluminación, Curva C a enchufes y Curva D a motores/clima"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-yellow-300" />
+                <span>Auto-Asignar Curvas Normativas SEC</span>
+              </button>
+            </div>
+
+            {/* CURVE SELECTOR TABS */}
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+              {(['B', 'C', 'D', 'K', 'Z'] as ProtectionCurve[]).map(curveKey => {
+                const info = CURVE_EXPLANATIONS[curveKey];
+                const isActive = activeCurveTab === curveKey;
+                return (
+                  <button
+                    key={curveKey}
+                    onClick={() => setActiveCurveTab(curveKey)}
+                    className={`p-3 rounded-xl border text-left transition relative ${
+                      isActive
+                        ? 'bg-slate-800/90 border-cyan-400 ring-2 ring-cyan-500/50 shadow-lg'
+                        : 'bg-slate-950/60 border-slate-800 hover:border-slate-700 hover:bg-slate-900'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className={`text-base font-black font-mono ${
+                        curveKey === 'B' ? 'text-amber-400' :
+                        curveKey === 'C' ? 'text-emerald-400' :
+                        curveKey === 'D' ? 'text-cyan-400' :
+                        curveKey === 'K' ? 'text-purple-400' : 'text-pink-400'
+                      }`}>
+                        Curva {curveKey}
+                      </span>
+                      <span className="text-[10px] font-mono font-bold text-slate-400 bg-slate-900 px-1.5 py-0.5 rounded border border-slate-800">
+                        {info.magneticRange}
+                      </span>
+                    </div>
+                    <span className="text-[11px] text-slate-300 block font-medium mt-1 truncate">
+                      {info.shortDescription}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* ACTIVE CURVE DETAILED TECHNICAL DOSSIER */}
+            {CURVE_EXPLANATIONS[activeCurveTab] && (
+              <div className="space-y-4">
+                
+                {/* HEADER BANNER OF ACTIVE CURVE */}
+                <div className="bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 border border-slate-800 p-4 rounded-xl flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs font-mono font-black px-2.5 py-0.5 rounded-full border ${
+                        activeCurveTab === 'B' ? 'bg-amber-950 text-amber-300 border-amber-500/50' :
+                        activeCurveTab === 'C' ? 'bg-emerald-950 text-emerald-300 border-emerald-500/50' :
+                        activeCurveTab === 'D' ? 'bg-cyan-950 text-cyan-300 border-cyan-500/50' :
+                        activeCurveTab === 'K' ? 'bg-purple-950 text-purple-300 border-purple-500/50' : 'bg-pink-950 text-pink-300 border-pink-500/50'
+                      }`}>
+                        DISPARO MAGNÉTICO: {CURVE_EXPLANATIONS[activeCurveTab].magneticRange}
+                      </span>
+                      <span className="text-xs text-slate-400 font-mono">
+                        Tiempo: &lt; 0.05s
+                      </span>
+                    </div>
+                    <h4 className="text-base font-black text-white mt-1">
+                      {CURVE_EXPLANATIONS[activeCurveTab].name}
+                    </h4>
+                  </div>
+
+                  <div className="text-right">
+                    <span className="text-[10px] text-slate-400 uppercase font-mono block">Referencia Oficial SEC:</span>
+                    <span className="text-xs font-bold text-amber-300 font-mono">
+                      {CURVE_EXPLANATIONS[activeCurveTab].normReference}
+                    </span>
+                  </div>
+                </div>
+
+                {/* 2-COLUMN COMPARISON CARDS: "¿QUÉ HACE?" vs "¿POR QUÉ ESTA Y NO OTRA?" */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 text-xs">
+                  
+                  {/* CARD 1: ¿QUÉ HACE Y CUÁNDO USARLA? */}
+                  <div className="bg-emerald-950/20 border border-emerald-500/30 p-4 rounded-xl space-y-2.5">
+                    <div className="flex items-center gap-2 text-emerald-400 font-black text-xs uppercase tracking-wider">
+                      <CheckCircle2 className="w-4 h-4 shrink-0" />
+                      <span>¿Qué hace y cuándo DEBES ponerla?</span>
+                    </div>
+                    <p className="text-slate-200 leading-relaxed">
+                      {CURVE_EXPLANATIONS[activeCurveTab].whatItDoes}
+                    </p>
+                    <div className="bg-slate-950/60 p-2.5 rounded-lg border border-emerald-900/40 text-slate-300 space-y-1">
+                      <strong className="text-emerald-300 font-bold block text-[11px]">Aplicación Recomendada:</strong>
+                      <p className="text-[11px] leading-relaxed">
+                        {CURVE_EXPLANATIONS[activeCurveTab].whyUseIt}
+                      </p>
+                    </div>
+
+                    {/* TYPICAL LOADS TAGS */}
+                    <div>
+                      <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-1.5">
+                        Cargas Típicas Certificadas SEC:
+                      </span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {CURVE_EXPLANATIONS[activeCurveTab].recommendedLoads.map((loadItem, idx) => (
+                          <span key={idx} className="px-2 py-0.5 bg-slate-900 border border-emerald-500/30 text-emerald-200 rounded-md text-[10px] font-mono">
+                            • {loadItem}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* CARD 2: ¿POR QUÉ ESTA Y NO OTRA? (RIESGOS DE EQUIVOCARSE) */}
+                  <div className="bg-amber-950/20 border border-amber-500/30 p-4 rounded-xl space-y-2.5">
+                    <div className="flex items-center gap-2 text-amber-400 font-black text-xs uppercase tracking-wider">
+                      <ShieldAlert className="w-4 h-4 shrink-0" />
+                      <span>¿Por qué poner esta curva y NO otra?</span>
+                    </div>
+                    <p className="text-slate-200 leading-relaxed font-medium">
+                      {CURVE_EXPLANATIONS[activeCurveTab].whyUseIt}
+                    </p>
+                    <div className="bg-slate-950/60 p-2.5 rounded-lg border border-amber-900/40 text-amber-200/90 space-y-1">
+                      <strong className="text-amber-300 font-bold block text-[11px]">Riesgos si se usa la curva incorrecta:</strong>
+                      <p className="text-[11px] leading-relaxed text-slate-300">
+                        {CURVE_EXPLANATIONS[activeCurveTab].whyNotUseIt}
+                      </p>
+                    </div>
+                  </div>
+
+                </div>
+
+                {/* GRAPHICAL TIME-CURRENT LOGARITHMIC CURVE ENVELOPE (SVG) */}
+                <div className="bg-slate-950 border border-slate-800 p-4 rounded-xl space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                      <Activity className="w-4 h-4 text-cyan-400" />
+                      <span>Curva Característica Tiempo-Corriente (IEC 60898-1)</span>
+                    </span>
+                    <span className="text-[10px] font-mono text-slate-500">
+                      Eje X: Múltiplo de In (I/In) | Eje Y: Tiempo de Disparo (s)
+                    </span>
+                  </div>
+
+                  <div className="w-full h-32 bg-slate-900/80 rounded-lg border border-slate-800 p-2 relative overflow-hidden flex items-center justify-center">
+                    <svg viewBox="0 0 600 120" className="w-full h-full">
+                      {/* Grid Lines */}
+                      <line x1="50" y1="10" x2="580" y2="10" stroke="#334155" strokeWidth="0.5" strokeDasharray="2,2" />
+                      <line x1="50" y1="45" x2="580" y2="45" stroke="#334155" strokeWidth="0.5" strokeDasharray="2,2" />
+                      <line x1="50" y1="80" x2="580" y2="80" stroke="#334155" strokeWidth="0.5" strokeDasharray="2,2" />
+                      <line x1="50" y1="105" x2="580" y2="105" stroke="#475569" strokeWidth="1" />
+                      <line x1="50" y1="10" x2="50" y2="105" stroke="#475569" strokeWidth="1" />
+
+                      {/* Axes Labels */}
+                      <text x="52" y="20" fill="#94a3b8" fontSize="8" fontFamily="monospace">1000s (Térmico)</text>
+                      <text x="52" y="55" fill="#94a3b8" fontSize="8" fontFamily="monospace">1s</text>
+                      <text x="52" y="95" fill="#94a3b8" fontSize="8" fontFamily="monospace">0.01s (Magnético)</text>
+
+                      {/* Multiplier Markers on X axis */}
+                      <text x="100" y="116" textAnchor="middle" fill="#64748b" fontSize="8" fontFamily="monospace">1x</text>
+                      <text x="160" y="116" textAnchor="middle" fill="#ca8a04" fontSize="8" fontFamily="monospace" fontWeight="bold">3-5x (B)</text>
+                      <text x="260" y="116" textAnchor="middle" fill="#059669" fontSize="8" fontFamily="monospace" fontWeight="bold">5-10x (C)</text>
+                      <text x="380" y="116" textAnchor="middle" fill="#0891b2" fontSize="8" fontFamily="monospace" fontWeight="bold">10-20x (D)</text>
+                      <text x="480" y="116" textAnchor="middle" fill="#7c3aed" fontSize="8" fontFamily="monospace" fontWeight="bold">K (8-14x)</text>
+
+                      {/* Thermal Zone (Inverse Time Curve) */}
+                      <path
+                        d="M 100 15 Q 120 40 150 70"
+                        fill="none"
+                        stroke="#f59e0b"
+                        strokeWidth="2.5"
+                      />
+                      <text x="140" y="30" fill="#f59e0b" fontSize="7.5" fontWeight="bold">Zona Térmica (Sobrecarga)</text>
+
+                      {/* Active Curve Instantaneous Drop Zone Highlighting */}
+                      {activeCurveTab === 'B' && (
+                        <g>
+                          <rect x="140" y="20" width="60" height="85" fill="rgba(202, 138, 4, 0.25)" stroke="#ca8a04" strokeWidth="1.5" rx="4" />
+                          <path d="M 150 70 L 170 100" fill="none" stroke="#ca8a04" strokeWidth="3" />
+                          <text x="170" y="60" textAnchor="middle" fill="#fde047" fontSize="8" fontWeight="bold">DISPARO CURVA B</text>
+                        </g>
+                      )}
+                      {activeCurveTab === 'C' && (
+                        <g>
+                          <rect x="220" y="20" width="80" height="85" fill="rgba(5, 150, 105, 0.25)" stroke="#059669" strokeWidth="1.5" rx="4" />
+                          <path d="M 230 70 L 260 100" fill="none" stroke="#059669" strokeWidth="3" />
+                          <text x="260" y="60" textAnchor="middle" fill="#86efac" fontSize="8" fontWeight="bold">DISPARO CURVA C</text>
+                        </g>
+                      )}
+                      {activeCurveTab === 'D' && (
+                        <g>
+                          <rect x="330" y="20" width="100" height="85" fill="rgba(8, 145, 178, 0.25)" stroke="#0891b2" strokeWidth="1.5" rx="4" />
+                          <path d="M 340 70 L 380 100" fill="none" stroke="#0891b2" strokeWidth="3" />
+                          <text x="380" y="60" textAnchor="middle" fill="#67e8f9" fontSize="8" fontWeight="bold">DISPARO CURVA D</text>
+                        </g>
+                      )}
+                      {activeCurveTab === 'K' && (
+                        <g>
+                          <rect x="300" y="20" width="90" height="85" fill="rgba(124, 58, 237, 0.25)" stroke="#7c3aed" strokeWidth="1.5" rx="4" />
+                          <text x="345" y="60" textAnchor="middle" fill="#d8b4fe" fontSize="8" fontWeight="bold">DISPARO CURVA K</text>
+                        </g>
+                      )}
+                      {activeCurveTab === 'Z' && (
+                        <g>
+                          <rect x="110" y="20" width="45" height="85" fill="rgba(219, 39, 119, 0.25)" stroke="#db2777" strokeWidth="1.5" rx="4" />
+                          <text x="132" y="60" textAnchor="middle" fill="#fbcfe8" fontSize="8" fontWeight="bold">CURVA Z</text>
+                        </g>
+                      )}
+                    </svg>
+                  </div>
+                </div>
+
+              </div>
+            )}
+
+            {/* ACTION FOOTER */}
+            <div className="border-t border-slate-800 pt-3.5 flex flex-wrap items-center justify-between gap-3">
+              <div className="text-xs text-slate-400">
+                Disyuntor actual: <strong className="text-white font-mono">{components.find(c => c.id === selectedBreakerIdForCurve)?.name || 'Seleccionado'}</strong>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowCurveModal(false)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-xl text-xs transition"
+                >
+                  Cerrar Guía
+                </button>
+                <button
+                  onClick={() => {
+                    if (selectedBreakerIdForCurve) {
+                      handleChangeBreakerCurve(selectedBreakerIdForCurve, activeCurveTab);
+                      setShowCurveModal(false);
+                    }
+                  }}
+                  className="px-5 py-2 bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white font-bold rounded-xl text-xs shadow-lg transition flex items-center gap-1.5"
+                >
+                  <Check className="w-4 h-4 text-white" />
+                  <span>Aplicar Curva {activeCurveTab} a este Disyuntor</span>
+                </button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* PILOT LIGHTS COLOR CONFIGURATION MODAL (SEC RIC N°02 / IEC 60446) */}
+      {showPilotConfigModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-slate-900 border-2 border-amber-500/80 rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-5 relative max-h-[90vh] overflow-y-auto custom-scrollbar">
+            {/* MODAL HEADER */}
+            <div className="flex items-start justify-between border-b border-slate-800 pb-3.5">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-amber-950/80 text-amber-400 rounded-xl border border-amber-800 shrink-0">
+                  <Activity className="w-6 h-6 text-amber-400" />
+                </div>
+                <div>
+                  <span className="text-[10px] text-amber-400 uppercase tracking-widest font-mono font-black">
+                    Personalización Visual • Señalización &amp; Normas
+                  </span>
+                  <h3 className="text-base sm:text-lg font-black text-white">
+                    Configuración de Luces Piloto y Señalética DIN
+                  </h3>
+                  <p className="text-xs text-slate-300 mt-0.5">
+                    Selecciona el esquema de colores para las luces piloto indicadoras de fase y neutro del tablero.
+                  </p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowPilotConfigModal(false)} 
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* PRESETS SELECTION */}
+            <div className="space-y-3">
+              <span className="text-xs font-bold text-slate-200">Esquemas Normativos Disponibles:</span>
+              
+              <div className="grid grid-cols-1 gap-3">
+                {Object.entries(PILOT_COLOR_PRESETS).map(([key, preset]) => {
+                  const isSelected = pilotColorPreset === key;
+                  return (
+                    <div
+                      key={key}
+                      onClick={() => setPilotColorPreset(key as any)}
+                      className={`p-4 rounded-xl border-2 cursor-pointer transition flex flex-col gap-2 ${
+                        isSelected
+                          ? 'bg-amber-950/30 border-amber-500 shadow-md'
+                          : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="radio"
+                            name="pilotPreset"
+                            checked={isSelected}
+                            onChange={() => setPilotColorPreset(key as any)}
+                            className="text-amber-500 focus:ring-amber-400"
+                          />
+                          <span className="text-sm font-bold text-white">{preset.name}</span>
+                        </div>
+                        {isSelected && (
+                          <span className="text-[10px] bg-amber-500 text-slate-950 font-bold px-2 py-0.5 rounded-full">
+                            Activo
+                          </span>
+                        )}
+                      </div>
+
+                      <p className="text-xs text-slate-400 leading-relaxed pl-5">
+                        {preset.description}
+                      </p>
+
+                      {/* Color Preview Swatches */}
+                      <div className="flex items-center gap-4 pl-5 pt-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-3.5 h-3.5 rounded-full inline-block border border-white/40" style={{ backgroundColor: preset.l1 }} />
+                          <span className="text-[11px] font-mono text-slate-300">L1</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-3.5 h-3.5 rounded-full inline-block border border-white/40" style={{ backgroundColor: preset.l2 }} />
+                          <span className="text-[11px] font-mono text-slate-300">L2</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-3.5 h-3.5 rounded-full inline-block border border-white/40" style={{ backgroundColor: preset.l3 }} />
+                          <span className="text-[11px] font-mono text-slate-300">L3</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-3.5 h-3.5 rounded-full inline-block border border-white/40" style={{ backgroundColor: preset.n }} />
+                          <span className="text-[11px] font-mono text-slate-300">N</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-3.5 h-3.5 rounded-full inline-block border border-white/40" style={{ backgroundColor: preset.pe }} />
+                          <span className="text-[11px] font-mono text-slate-300">PE</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* ACTION FOOTER */}
+            <div className="border-t border-slate-800 pt-3.5 flex items-center justify-end gap-2">
+              <button
+                onClick={() => setShowPilotConfigModal(false)}
+                className="px-5 py-2 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white font-bold rounded-xl text-xs shadow-lg transition"
+              >
+                Guardar y Aplicar al Tablero
+              </button>
             </div>
           </div>
         </div>
