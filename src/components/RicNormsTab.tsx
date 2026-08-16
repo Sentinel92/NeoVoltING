@@ -1,10 +1,31 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { RIC_NORMS_DATA } from '../data/ricNormsData';
 import { ShieldCheck, Search, BookOpen, Printer, CheckCircle2 } from 'lucide-react';
 
-export const RicNormsTab: React.FC = () => {
+interface RicNormsTabProps {
+  initialNormNum?: string;
+}
+
+export const RicNormsTab: React.FC<RicNormsTabProps> = ({ initialNormNum }) => {
   const [search, setSearch] = useState('');
-  const [expandedNum, setExpandedNum] = useState<string | null>('RIC N°02');
+  const [expandedNum, setExpandedNum] = useState<string | null>(() => {
+    if (initialNormNum) return initialNormNum;
+    try {
+      const stored = localStorage.getItem('neovolt_target_ric_norm');
+      if (stored) return stored;
+    } catch {}
+    return 'RIC N°02';
+  });
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('neovolt_target_ric_norm');
+      if (stored) {
+        setExpandedNum(stored);
+        localStorage.removeItem('neovolt_target_ric_norm');
+      }
+    } catch {}
+  }, []);
 
   const filtered = RIC_NORMS_DATA.filter(
     (r) =>

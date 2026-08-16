@@ -1,6 +1,6 @@
 {
   "name": "NEOVOLT - Ingeniería Eléctrica de Precisión & Tableros SEC",
   "description": "Calculador y Armador Inteligente de Tableros Eléctricos, Diagrama Unilineal y Simulación Física según Normativa SEC (RIC N°01 - RIC N°11) de Chile.",
-  "requestFramePermissions": [],
+  "requestFramePermissions": ["microphone"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

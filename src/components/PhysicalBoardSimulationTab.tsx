@@ -6,7 +6,8 @@ import {
   Sparkles, ShieldAlert, FileText, Copy, Download, Camera,
   Layers, X, Check, Activity, Sliders, Building2,
   ZoomIn, ZoomOut, Maximize2, Move, Plus, Wand2,
-  ArrowLeft, ArrowRight, Settings, ShieldCheck, Gauge
+  ArrowLeft, ArrowRight, Settings, ShieldCheck, Gauge,
+  Eye, EyeOff, ChevronDown, ChevronUp, SlidersHorizontal
 } from 'lucide-react';
 import { ClientRecord, RoomData, HighAppliance } from '../types';
 
@@ -132,6 +133,9 @@ export default function InteractiveBoardTab() {
   const [showFeasibilityModal, setShowFeasibilityModal] = useState<boolean>(false);
   const [feasibilityErrors, setFeasibilityErrors] = useState<string[]>([]);
   const [showQuickAddMenu, setShowQuickAddMenu] = useState<boolean>(false);
+  const [showSecondaryMenu, setShowSecondaryMenu] = useState<boolean>(false);
+  const [isToolbarCollapsed, setIsToolbarCollapsed] = useState<boolean>(false);
+  const [isHudCollapsed, setIsHudCollapsed] = useState<boolean>(false);
 
   const svgRef = useRef<SVGSVGElement>(null);
 
@@ -1329,232 +1333,259 @@ export default function InteractiveBoardTab() {
             }}
           >
             
-            {/* TOOLBAR INSIDE BOARD CONTAINER (ACOMETIDA & GRID) */}
-            <div className="absolute top-4 left-4 right-4 z-20 flex flex-wrap items-center justify-between gap-3 bg-slate-900/90 backdrop-blur-md p-3 rounded-2xl border border-slate-700 shadow-2xl">
-              
-              {/* ACOMETIDA SELECTOR & ADD COMPONENT */}
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="flex bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs">
-                  <button
-                    onClick={() => handleSupplyToggle('MONOFASICO_220')}
-                    className={`px-3 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5 ${
-                      supplyType === 'MONOFASICO_220'
-                        ? 'bg-fuchsia-600 text-white shadow-lg'
-                        : 'text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    <Zap className="w-3.5 h-3.5" />
-                    <span>Monofásico (220V)</span>
-                  </button>
-                  <button
-                    onClick={() => handleSupplyToggle('TRIFASICO_380')}
-                    className={`px-3 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5 ${
-                      supplyType === 'TRIFASICO_380'
-                        ? 'bg-amber-600 text-white shadow-lg'
-                        : 'text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    <Activity className="w-3.5 h-3.5" />
-                    <span>Trifásico (380V - 4P)</span>
-                  </button>
+            {/* COLLAPSIBLE TOP TOOLBAR / MINIMIZED TRIGGER */}
+            {isToolbarCollapsed ? (
+              <div className="absolute top-3 left-3 z-30 flex items-center gap-2">
+                <button
+                  onClick={() => setIsToolbarCollapsed(false)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-slate-200 border border-slate-700/80 shadow-2xl backdrop-blur-md text-xs font-bold transition hover:border-slate-500 hover:text-white"
+                  title="Expandir barra de herramientas del tablero"
+                >
+                  <Eye className="w-3.5 h-3.5 text-fuchsia-400" />
+                  <span>Mostrar Barra</span>
+                </button>
+                {isEnergySimulated && (
+                  <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[11px] font-mono font-bold animate-pulse shadow-lg backdrop-blur-md">
+                    <Zap className="w-3 h-3 text-emerald-400" /> Energía ON ⚡
+                  </span>
+                )}
+              </div>
+            ) : (
+              <div className="absolute top-3 left-3 right-3 z-20 flex flex-wrap items-center justify-between gap-2 bg-slate-900/90 backdrop-blur-md px-3 py-1.5 rounded-2xl border border-slate-700/90 shadow-2xl">
+                
+                {/* LEFT SECTION: COMPACT TOGGLE SWITCH & ADD COMPONENT */}
+                <div className="flex items-center gap-2">
+                  {/* COMPACT SUPPLY TOGGLE SWITCH */}
+                  <div className="flex items-center bg-slate-950/90 px-2 py-1 rounded-xl border border-slate-800 text-xs gap-1.5" title="Seleccionar Tipo de Acometida (RIC N°01/N°02)">
+                    <span className={`text-[11px] font-bold transition ${supplyType === 'MONOFASICO_220' ? 'text-fuchsia-400 font-black' : 'text-slate-500'}`}>
+                      220V 1F
+                    </span>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={supplyType === 'TRIFASICO_380'}
+                      onClick={() => handleSupplyToggle(supplyType === 'MONOFASICO_220' ? 'TRIFASICO_380' : 'MONOFASICO_220')}
+                      className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                        supplyType === 'TRIFASICO_380' ? 'bg-amber-500' : 'bg-fuchsia-600'
+                      }`}
+                      title={`Alternar a suministro ${supplyType === 'MONOFASICO_220' ? 'Trifásico 380V' : 'Monofásico 220V'}`}
+                    >
+                      <span
+                        className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                          supplyType === 'TRIFASICO_380' ? 'translate-x-4' : 'translate-x-0'
+                        }`}
+                      />
+                    </button>
+                    <span className={`text-[11px] font-bold transition ${supplyType === 'TRIFASICO_380' ? 'text-amber-400 font-black' : 'text-slate-500'}`}>
+                      380V 3F
+                    </span>
+                  </div>
+
+                  {/* PRIMARY ACTION: ADD COMPONENT DROPDOWN */}
+                  <div className="relative">
+                    <button
+                      onClick={() => {
+                        setShowQuickAddMenu(!showQuickAddMenu);
+                        setShowCaptureMenu(false);
+                      }}
+                      className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow transition"
+                      title="Añadir dispositivo de protección o disyuntor al riel DIN"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>+ Añadir</span>
+                      <ChevronDown className="w-3 h-3 opacity-70" />
+                    </button>
+
+                    {showQuickAddMenu && (
+                      <div className="absolute top-full left-0 mt-2 w-56 bg-slate-900 border border-slate-700 rounded-xl p-2 shadow-2xl z-30 space-y-1 text-xs">
+                        <div className="text-[10px] text-slate-400 font-bold px-2 py-1 uppercase tracking-wider">Disyuntores MCB</div>
+                        <button
+                          onClick={() => handleAddComponent('MCB', 10, 'C10A Alumbrado')}
+                          className="w-full text-left px-2.5 py-1.5 hover:bg-slate-800 rounded-lg text-slate-200 flex items-center justify-between"
+                        >
+                          <span>MCB 10A (Alumbrado)</span>
+                          <span className="text-[10px] font-mono text-fuchsia-400 font-bold">1 DIN</span>
+                        </button>
+                        <button
+                          onClick={() => handleAddComponent('MCB', 16, 'C16A Enchufes')}
+                          className="w-full text-left px-2.5 py-1.5 hover:bg-slate-800 rounded-lg text-slate-200 flex items-center justify-between"
+                        >
+                          <span>MCB 16A (Enchufes)</span>
+                          <span className="text-[10px] font-mono text-fuchsia-400 font-bold">1 DIN</span>
+                        </button>
+                        <button
+                          onClick={() => handleAddComponent('MCB', 20, 'C20A Fuerza')}
+                          className="w-full text-left px-2.5 py-1.5 hover:bg-slate-800 rounded-lg text-slate-200 flex items-center justify-between"
+                        >
+                          <span>MCB 20A (Fuerza/Cocina)</span>
+                          <span className="text-[10px] font-mono text-fuchsia-400 font-bold">1 DIN</span>
+                        </button>
+                        <button
+                          onClick={() => handleAddComponent('MCB', 25, 'C25A Clima')}
+                          className="w-full text-left px-2.5 py-1.5 hover:bg-slate-800 rounded-lg text-slate-200 flex items-center justify-between"
+                        >
+                          <span>MCB 25A (Climatización)</span>
+                          <span className="text-[10px] font-mono text-fuchsia-400 font-bold">1 DIN</span>
+                        </button>
+                        <div className="border-t border-slate-800 my-1 pt-1 text-[10px] text-slate-400 font-bold px-2 uppercase tracking-wider">Protección Especial</div>
+                        <button
+                          onClick={() => handleAddComponent('RCD', 25, 'RCD 25A 30mA')}
+                          className="w-full text-left px-2.5 py-1.5 hover:bg-slate-800 rounded-lg text-slate-200 flex items-center justify-between"
+                        >
+                          <span>RCD Diferencial 25A</span>
+                          <span className="text-[10px] font-mono text-amber-400 font-bold">2 DIN</span>
+                        </button>
+                        <button
+                          onClick={() => handleAddComponent('DPS', 20, 'DPS Sobretensión')}
+                          className="w-full text-left px-2.5 py-1.5 hover:bg-slate-800 rounded-lg text-slate-200 flex items-center justify-between"
+                        >
+                          <span>Protector DPS Sobretensión</span>
+                          <span className="text-[10px] font-mono text-emerald-400 font-bold">1 DIN</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
-                {/* ADD COMPONENT POPUP */}
-                <div className="relative">
+                {/* RIGHT SECTION: PRIMARY ACTIONS + SECONDARY TOOLTIP ICON GROUP + DISCRETE COLLAPSE */}
+                <div className="flex items-center gap-2 text-xs">
+                  {/* PRIMARY ACTION: VERIFICAR Y AUTOCABLEAR */}
                   <button
-                    onClick={() => setShowQuickAddMenu(!showQuickAddMenu)}
-                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow transition"
+                    onClick={handleVerifyAndAutoWire}
+                    className="px-3 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow transition"
+                    title="Calcula la ruta lógica óptima entre dispositivos y dibuja las líneas de cableado según RIC N°02"
                   >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>+ Añadir Componente</span>
+                    <Wand2 className="w-3.5 h-3.5 text-cyan-300" />
+                    <span>Autocablear</span>
                   </button>
 
-                  {showQuickAddMenu && (
-                    <div className="absolute top-full left-0 mt-2 w-56 bg-slate-900 border border-slate-700 rounded-xl p-2 shadow-2xl z-30 space-y-1 text-xs">
-                      <div className="text-[10px] text-slate-400 font-bold px-2 py-1 uppercase tracking-wider">Disyuntores MCB</div>
+                  {/* PRIMARY ACTION: SIMULAR ENERGIA */}
+                  <button
+                    onClick={() => {
+                      const next = !isEnergySimulated;
+                      setIsEnergySimulated(next);
+                      setSnapNotice(next ? "⚡ Energía simulada activada: circuito energizado y componentes encendidos." : "🛑 Simulación de energía desactivada.");
+                      setTimeout(() => setSnapNotice(null), 3000);
+                    }}
+                    className={`px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all shadow-sm border ${
+                      isEnergySimulated
+                        ? 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 border-emerald-300 shadow-emerald-500/40 animate-pulse'
+                        : 'bg-slate-800 hover:bg-slate-700 text-emerald-400 border-emerald-500/40'
+                    }`}
+                    title="Simular flujo de energía eléctrica sobre los cables validados"
+                  >
+                    <Zap className={`w-3.5 h-3.5 ${isEnergySimulated ? 'fill-current text-slate-950 animate-bounce' : 'text-emerald-400'}`} />
+                    <span>{isEnergySimulated ? 'Energía ON ⚡' : 'Simular'}</span>
+                  </button>
+
+                  {/* SECONDARY ACTIONS GROUP: ICONS WITH TOOLTIPS */}
+                  <div className="flex items-center bg-slate-950/80 p-0.5 rounded-xl border border-slate-800 text-slate-300 gap-0.5">
+                    {/* CAPTURAR DISENO (PNG / PDF) */}
+                    <div className="relative">
                       <button
-                        onClick={() => handleAddComponent('MCB', 10, 'C10A Alumbrado')}
-                        className="w-full text-left px-2.5 py-1.5 hover:bg-slate-800 rounded-lg text-slate-200 flex items-center justify-between"
+                        onClick={() => {
+                          setShowCaptureMenu(!showCaptureMenu);
+                          setShowQuickAddMenu(false);
+                        }}
+                        disabled={isCapturing}
+                        className="p-1.5 hover:text-white hover:bg-slate-800 rounded-lg transition relative group"
+                        title="Capturar Diseño (Exportar PNG / PDF)"
                       >
-                        <span>MCB 10A (Alumbrado)</span>
-                        <span className="text-[10px] font-mono text-fuchsia-400">1 DIN</span>
+                        <Camera className="w-3.5 h-3.5 text-emerald-400" />
                       </button>
-                      <button
-                        onClick={() => handleAddComponent('MCB', 16, 'C16A Enchufes')}
-                        className="w-full text-left px-2.5 py-1.5 hover:bg-slate-800 rounded-lg text-slate-200 flex items-center justify-between"
-                      >
-                        <span>MCB 16A (Enchufes)</span>
-                        <span className="text-[10px] font-mono text-fuchsia-400">1 DIN</span>
-                      </button>
-                      <button
-                        onClick={() => handleAddComponent('MCB', 20, 'C20A Fuerza')}
-                        className="w-full text-left px-2.5 py-1.5 hover:bg-slate-800 rounded-lg text-slate-200 flex items-center justify-between"
-                      >
-                        <span>MCB 20A (Fuerza/Cocina)</span>
-                        <span className="text-[10px] font-mono text-fuchsia-400">1 DIN</span>
-                      </button>
-                      <button
-                        onClick={() => handleAddComponent('MCB', 25, 'C25A Clima')}
-                        className="w-full text-left px-2.5 py-1.5 hover:bg-slate-800 rounded-lg text-slate-200 flex items-center justify-between"
-                      >
-                        <span>MCB 25A (Climatización)</span>
-                        <span className="text-[10px] font-mono text-fuchsia-400">1 DIN</span>
-                      </button>
-                      <div className="border-t border-slate-800 my-1 pt-1 text-[10px] text-slate-400 font-bold px-2 uppercase tracking-wider">Protección Especial</div>
-                      <button
-                        onClick={() => handleAddComponent('RCD', 25, 'RCD 25A 30mA')}
-                        className="w-full text-left px-2.5 py-1.5 hover:bg-slate-800 rounded-lg text-slate-200 flex items-center justify-between"
-                      >
-                        <span>RCD Diferencial 25A</span>
-                        <span className="text-[10px] font-mono text-amber-400">2 DIN</span>
-                      </button>
-                      <button
-                        onClick={() => handleAddComponent('DPS', 20, 'DPS Sobretensión')}
-                        className="w-full text-left px-2.5 py-1.5 hover:bg-slate-800 rounded-lg text-slate-200 flex items-center justify-between"
-                      >
-                        <span>Protector DPS Sobretensión</span>
-                        <span className="text-[10px] font-mono text-emerald-400">1 DIN</span>
-                      </button>
+
+                      {showCaptureMenu && (
+                        <div className="absolute top-full right-0 mt-2 w-52 bg-slate-900 border border-slate-700 rounded-xl p-2 shadow-2xl z-30 space-y-1 text-xs">
+                          <div className="text-[10px] text-slate-400 font-bold px-2 py-1 uppercase tracking-wider">Capturar Tablero</div>
+                          <button
+                            onClick={() => {
+                              setShowCaptureMenu(false);
+                              handleCaptureDesign('png');
+                            }}
+                            className="w-full text-left px-2.5 py-1.5 hover:bg-slate-800 rounded-lg text-slate-200 flex items-center justify-between transition"
+                          >
+                            <span className="flex items-center gap-1.5"><Camera className="w-3.5 h-3.5 text-emerald-400" /> Imagen PNG</span>
+                            <span className="text-[10px] font-mono text-emerald-400 font-bold">.PNG</span>
+                          </button>
+                          <button
+                            onClick={() => {
+                              setShowCaptureMenu(false);
+                              handleCaptureDesign('pdf');
+                            }}
+                            className="w-full text-left px-2.5 py-1.5 hover:bg-slate-800 rounded-lg text-slate-200 flex items-center justify-between transition"
+                          >
+                            <span className="flex items-center gap-1.5"><FileText className="w-3.5 h-3.5 text-cyan-400" /> Plano PDF</span>
+                            <span className="text-[10px] font-mono text-cyan-400 font-bold">.PDF</span>
+                          </button>
+                        </div>
+                      )}
                     </div>
-                  )}
+
+                    {/* SNAP A REJILLA */}
+                    <button
+                      onClick={() => setSnapToGrid(!snapToGrid)}
+                      className={`p-1.5 rounded-lg transition ${
+                        snapToGrid
+                          ? 'bg-fuchsia-600/30 text-fuchsia-300 border border-fuchsia-500/40'
+                          : 'hover:text-white hover:bg-slate-800 text-slate-400'
+                      }`}
+                      title={`Ajuste a Rejilla (${snapToGrid ? 'Activado 20px' : 'Desactivado'})`}
+                    >
+                      <Move className="w-3.5 h-3.5" />
+                    </button>
+
+                    {/* PASO A PASO (VERIFICADOR) */}
+                    <button
+                      onClick={() => {
+                        const next = !isWiringVerifierActive;
+                        setIsWiringVerifierActive(next);
+                        if (next) setVerifierStep(0);
+                        setSnapNotice(next ? "🔍 Modo Verificador activado: Siga las líneas guía paso a paso." : "Verificador desactivado.");
+                        setTimeout(() => setSnapNotice(null), 3000);
+                      }}
+                      className={`p-1.5 rounded-lg transition ${
+                        isWiringVerifierActive
+                          ? 'bg-amber-500/30 text-amber-300 border border-amber-500/40'
+                          : 'hover:text-white hover:bg-slate-800 text-slate-400'
+                      }`}
+                      title={`Verificador de Cableado Paso a Paso (${isWiringVerifierActive ? 'Activado' : 'Desactivado'})`}
+                    >
+                      <Layers className="w-3.5 h-3.5" />
+                    </button>
+
+                    {/* BORRAR CABLES */}
+                    <button
+                      onClick={() => {
+                        setWires([]);
+                        setSnapNotice("Todos los cables han sido eliminados.");
+                        setTimeout(() => setSnapNotice(null), 2500);
+                      }}
+                      className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition"
+                      title="Borrar Todos los Cables del Tablero"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  {/* DISCRETE COLLAPSE TOOLBAR BUTTON (EYE / EYE-OFF ICON) */}
+                  <button
+                    onClick={() => {
+                      setIsToolbarCollapsed(true);
+                      setShowCaptureMenu(false);
+                      setShowQuickAddMenu(false);
+                    }}
+                    className="p-1.5 bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl border border-slate-700/60 transition"
+                    title="Ocultar barra de herramientas (Expandir lienzo al 100%)"
+                  >
+                    <EyeOff className="w-3.5 h-3.5 text-slate-400 hover:text-white" />
+                  </button>
                 </div>
               </div>
-
-              {/* GRID, WIRE & SIMULATION ACTIONS */}
-              <div className="flex flex-wrap items-center gap-2 text-xs">
-                {/* VERIFICAR Y AUTOCABLEAR BUTTON */}
-                <button
-                  onClick={handleVerifyAndAutoWire}
-                  className="px-3 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-lg transition"
-                  title="Calcula la ruta lógica óptima entre dispositivos y dibuja las líneas de cableado según RIC N°02"
-                >
-                  <Wand2 className="w-3.5 h-3.5 text-cyan-300" />
-                  <span>Verificar y Autocablear</span>
-                </button>
-
-                {/* SIMULAR ENERGIA BUTTON */}
-                <button
-                  onClick={() => {
-                    const next = !isEnergySimulated;
-                    setIsEnergySimulated(next);
-                    setSnapNotice(next ? "⚡ Energía simulada activada: circuito energizado y componentes encendidos." : "🛑 Simulación de energía desactivada.");
-                    setTimeout(() => setSnapNotice(null), 3000);
-                  }}
-                  className={`px-3 py-1.5 rounded-xl font-black text-xs flex items-center gap-1.5 transition-all shadow-md border ${
-                    isEnergySimulated
-                      ? 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 border-emerald-300 shadow-emerald-500/40 animate-pulse'
-                      : 'bg-slate-800 hover:bg-slate-700 text-emerald-400 border-emerald-500/40'
-                  }`}
-                  title="Simular flujo de energía eléctrica sobre los cables validados y encender componentes"
-                >
-                  <Zap className={`w-4 h-4 ${isEnergySimulated ? 'fill-current text-slate-950 animate-bounce' : 'text-emerald-400'}`} />
-                  <span>{isEnergySimulated ? 'Energía ON ⚡' : 'Simular Energía'}</span>
-                </button>
-
-                {/* VERIFICADOR DE CABLEADO BUTTON */}
-                <button
-                  onClick={() => {
-                    const next = !isWiringVerifierActive;
-                    setIsWiringVerifierActive(next);
-                    if (next) setVerifierStep(0);
-                    setSnapNotice(next ? "🔍 Modo Verificador de Cableado activado: Siga las líneas punteadas paso a paso." : "Verificador de cableado desactivado.");
-                    setTimeout(() => setSnapNotice(null), 3000);
-                  }}
-                  className={`px-2.5 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all shadow-md border ${
-                    isWiringVerifierActive
-                      ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 border-amber-300 shadow-amber-500/30'
-                      : 'bg-slate-800 hover:bg-slate-700 text-amber-400 border-amber-500/40'
-                  }`}
-                  title="Modo Verificador de Cableado: Resalta con líneas punteadas el camino del esquema unilineal"
-                >
-                  <Layers className="w-3.5 h-3.5 text-amber-400" />
-                  <span>{isWiringVerifierActive ? 'Verificador ON' : 'Paso a Paso'}</span>
-                </button>
-
-                {/* ZOOM & PAN CONTROLS */}
-                <div className="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800 text-slate-300 gap-1">
-                  <button
-                    onClick={handleZoomOut}
-                    className="px-2 py-1.5 hover:text-white hover:bg-slate-800 rounded-lg text-xs font-bold flex items-center gap-1 transition"
-                    title="Alejar Zoom (-)"
-                  >
-                    <ZoomOut className="w-3.5 h-3.5" />
-                    <span className="hidden sm:inline">Zoom Out</span>
-                  </button>
-                  <button
-                    onClick={handleResetView}
-                    className="px-2.5 py-1 text-[11px] font-mono font-bold hover:text-white hover:bg-slate-800 rounded-lg transition border border-slate-800"
-                    title="Restablecer Vista (100%)"
-                  >
-                    Reset ({Math.round(zoom * 100)}%)
-                  </button>
-                  <button
-                    onClick={handleZoomIn}
-                    className="px-2 py-1.5 hover:text-white hover:bg-slate-800 rounded-lg text-xs font-bold flex items-center gap-1 transition"
-                    title="Acercar Zoom (+)"
-                  >
-                    <ZoomIn className="w-3.5 h-3.5" />
-                    <span className="hidden sm:inline">Zoom In</span>
-                  </button>
-                </div>
-
-                {/* CAPTURAR DISENO BUTTON (PNG / PDF) */}
-                <div className="relative">
-                  <button
-                    onClick={() => setShowCaptureMenu(!showCaptureMenu)}
-                    disabled={isCapturing}
-                    className="px-3 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-lg transition"
-                    title="Captura y exporta el plano técnico del tablero en imagen PNG o PDF"
-                  >
-                    <Camera className="w-3.5 h-3.5" />
-                    <span>{isCapturing ? 'Capturando...' : 'Capturar Diseño'}</span>
-                  </button>
-
-                  {showCaptureMenu && (
-                    <div className="absolute top-full right-0 mt-2 w-52 bg-slate-900 border border-slate-700 rounded-xl p-2 shadow-2xl z-30 space-y-1 text-xs">
-                      <div className="text-[10px] text-slate-400 font-bold px-2 py-1 uppercase tracking-wider">Exportar Tablero Actual</div>
-                      <button
-                        onClick={() => handleCaptureDesign('png')}
-                        className="w-full text-left px-2.5 py-2 hover:bg-slate-800 rounded-lg text-slate-200 flex items-center justify-between transition"
-                      >
-                        <span className="flex items-center gap-1.5"><Camera className="w-3.5 h-3.5 text-emerald-400" /> Descargar PNG</span>
-                        <span className="text-[10px] font-mono text-emerald-400 font-bold">.PNG</span>
-                      </button>
-                      <button
-                        onClick={() => handleCaptureDesign('pdf')}
-                        className="w-full text-left px-2.5 py-2 hover:bg-slate-800 rounded-lg text-slate-200 flex items-center justify-between transition"
-                      >
-                        <span className="flex items-center gap-1.5"><FileText className="w-3.5 h-3.5 text-cyan-400" /> Exportar Plano PDF</span>
-                        <span className="text-[10px] font-mono text-cyan-400 font-bold">.PDF</span>
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                <button
-                  onClick={() => setSnapToGrid(!snapToGrid)}
-                  className={`px-2.5 py-1.5 rounded-lg font-bold flex items-center gap-1.5 transition ${
-                    snapToGrid 
-                      ? 'bg-fuchsia-600/30 text-fuchsia-300 border border-fuchsia-500/50' 
-                      : 'bg-slate-800 text-slate-400'
-                  }`}
-                >
-                  <span>Snap ({gridSize}px): {snapToGrid ? 'ON' : 'OFF'}</span>
-                </button>
-
-                <button 
-                  onClick={() => setWires([])} 
-                  className="p-2 text-slate-400 hover:text-rose-400 bg-slate-800 hover:bg-slate-700 rounded-lg transition" 
-                  title="Borrar Todos los Cables"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
+            )}
 
             {/* ACTIVE SELECTED COMPONENT INSPECTOR / ACTIONS BAR */}
             {selectedComponent && (
-              <div className="absolute top-20 left-4 right-4 z-20 bg-slate-900/95 border-2 border-amber-500/80 backdrop-blur-md px-4 py-2.5 rounded-2xl shadow-2xl flex flex-wrap items-center justify-between gap-3 text-xs">
+              <div className={`absolute ${isToolbarCollapsed ? 'top-14' : 'top-16'} left-3 right-3 z-20 bg-slate-900/95 border-2 border-amber-500/80 backdrop-blur-md px-4 py-2.5 rounded-2xl shadow-2xl flex flex-wrap items-center justify-between gap-3 text-xs`}>
                 <div className="flex items-center gap-3">
                   <div className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse" />
                   <div>
@@ -1620,7 +1651,7 @@ export default function InteractiveBoardTab() {
 
             {/* VERIFICADOR DE CABLEADO - STEP GUIDANCE BANNER */}
             {isWiringVerifierActive && activeStep && !selectedComponent && (
-              <div className="absolute top-20 left-4 right-4 z-20 bg-slate-900/95 border-2 border-amber-500/80 backdrop-blur-md p-3.5 rounded-2xl shadow-2xl space-y-2">
+              <div className={`absolute ${isToolbarCollapsed ? 'top-14' : 'top-16'} left-3 right-3 z-20 bg-slate-900/95 border-2 border-amber-500/80 backdrop-blur-md p-3.5 rounded-2xl shadow-2xl space-y-2`}>
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-2">
                   <div className="flex items-center gap-2">
                     <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping" />
@@ -1684,69 +1715,110 @@ export default function InteractiveBoardTab() {
               </div>
             )}
 
-            {/* REAL-TIME FLOATING STATISTICS HUD PANEL (BOTTOM-RIGHT INSIDE BOARD CONTAINER) */}
-            <div className="absolute bottom-4 right-4 z-20 bg-slate-900/95 backdrop-blur-md p-4 rounded-2xl border border-slate-700 shadow-2xl space-y-2.5 min-w-[300px] max-w-sm">
-              <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-                <span className="text-[11px] font-black uppercase text-fuchsia-400 tracking-wider flex items-center gap-1.5">
-                  <Activity className="w-3.5 h-3.5" /> Estadísticas en Tiempo Real
-                </span>
-                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                  isIgaOverloaded ? 'bg-rose-950 border-rose-600 text-rose-300 animate-pulse' : 'bg-emerald-950 border-emerald-600 text-emerald-300'
-                }`}>
-                  {isIgaOverloaded ? '⚡ SOBRECARGA IGA' : '✓ IGA OK'}
-                </span>
-              </div>
+            {/* REAL-TIME FLOATING STATISTICS HUD PANEL (COLLAPSIBLE, BOTTOM-LEFT) */}
+            {isHudCollapsed ? (
+              <button
+                onClick={() => setIsHudCollapsed(false)}
+                className="absolute bottom-4 left-4 z-20 flex items-center gap-2 bg-slate-900/95 backdrop-blur-md px-3 py-2 rounded-2xl border border-slate-700/80 shadow-2xl text-xs text-slate-300 hover:border-slate-500 hover:text-white transition"
+                title="Expandir Estadísticas de Tablero"
+              >
+                <Activity className="w-3.5 h-3.5 text-fuchsia-400" />
+                <span className="font-mono font-bold text-slate-200">{usedDinModules}/{boardCapacity} DIN</span>
+                <span className="text-slate-500">|</span>
+                <span className="font-mono text-amber-400 font-bold">{(totalLoadPower / 1000).toFixed(1)} kW</span>
+                <ChevronUp className="w-3.5 h-3.5 text-slate-400" />
+              </button>
+            ) : (
+              <div className="absolute bottom-4 left-4 z-20 bg-slate-900/95 backdrop-blur-md p-3.5 rounded-2xl border border-slate-700 shadow-2xl space-y-2 min-w-[280px] max-w-xs text-xs">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-1.5">
+                  <span className="text-[10px] font-black uppercase text-fuchsia-400 tracking-wider flex items-center gap-1.5">
+                    <Activity className="w-3.5 h-3.5" /> Estadísticas en Vivo
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${
+                      isIgaOverloaded ? 'bg-rose-950 border-rose-600 text-rose-300 animate-pulse' : 'bg-emerald-950 border-emerald-600 text-emerald-300'
+                    }`}>
+                      {isIgaOverloaded ? '⚡ SOBRECARGA' : '✓ IGA OK'}
+                    </span>
+                    <button
+                      onClick={() => setIsHudCollapsed(true)}
+                      className="p-0.5 text-slate-400 hover:text-white rounded"
+                      title="Minimizar panel de estadísticas"
+                    >
+                      <ChevronDown className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
 
-              {/* STATS GRID */}
-              <div className="grid grid-cols-3 gap-2 text-xs font-mono">
-                <div className="bg-slate-950/70 p-2 rounded-xl border border-slate-800">
-                  <span className="text-[9px] text-slate-400 block font-sans">Módulos Usados:</span>
-                  <span className={`text-sm font-black ${isCapacityExceeded ? 'text-rose-400' : 'text-slate-100'}`}>
-                    {usedDinModules} / {boardCapacity}
-                  </span>
+                {/* STATS GRID */}
+                <div className="grid grid-cols-3 gap-1.5 text-xs font-mono">
+                  <div className="bg-slate-950/70 p-1.5 rounded-xl border border-slate-800">
+                    <span className="text-[9px] text-slate-400 block font-sans">DIN:</span>
+                    <span className={`text-xs font-black ${isCapacityExceeded ? 'text-rose-400' : 'text-slate-100'}`}>
+                      {usedDinModules}/{boardCapacity}
+                    </span>
+                  </div>
+                  <div className="bg-slate-950/70 p-1.5 rounded-xl border border-slate-800">
+                    <span className="text-[9px] text-slate-400 block font-sans">Potencia:</span>
+                    <span className="text-xs font-black text-amber-400">
+                      {(totalLoadPower / 1000).toFixed(1)}kW
+                    </span>
+                  </div>
+                  <div className="bg-slate-950/70 p-1.5 rounded-xl border border-slate-800">
+                    <span className="text-[9px] text-slate-400 block font-sans">Corriente:</span>
+                    <span className={`text-xs font-black ${isIgaOverloaded ? 'text-rose-400' : 'text-emerald-400'}`}>
+                      {totalLoadCurrent.toFixed(1)}A
+                    </span>
+                  </div>
                 </div>
-                <div className="bg-slate-950/70 p-2 rounded-xl border border-slate-800">
-                  <span className="text-[9px] text-slate-400 block font-sans">Consumo Proy.:</span>
-                  <span className="text-sm font-black text-amber-400">
-                    {(totalLoadPower / 1000).toFixed(1)} kW
-                  </span>
-                </div>
-                <div className="bg-slate-950/70 p-2 rounded-xl border border-slate-800">
-                  <span className="text-[9px] text-slate-400 block font-sans">Corriente:</span>
-                  <span className={`text-sm font-black ${isIgaOverloaded ? 'text-rose-400' : 'text-emerald-400'}`}>
-                    {totalLoadCurrent.toFixed(1)} A
-                  </span>
-                </div>
-              </div>
 
-              {/* PHYSICAL OCCUPANCY PROGRESS BAR */}
-              <div className="space-y-1">
-                <div className="flex justify-between text-[10px] font-sans">
-                  <span className="text-slate-400 font-bold">Ocupación Física Total:</span>
-                  <span className={`font-mono font-bold ${occupancyPercentage > 100 ? 'text-rose-400' : occupancyPercentage > 75 ? 'text-amber-400' : 'text-emerald-400'}`}>
-                    {occupancyPercentage}%
-                  </span>
+                {/* PHYSICAL OCCUPANCY PROGRESS BAR */}
+                <div className="space-y-1">
+                  <div className="flex justify-between text-[10px] font-sans">
+                    <span className="text-slate-400 font-bold">Ocupación Física:</span>
+                    <span className={`font-mono font-bold ${occupancyPercentage > 100 ? 'text-rose-400' : occupancyPercentage > 75 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                      {occupancyPercentage}%
+                    </span>
+                  </div>
+                  <div className="w-full bg-slate-950 h-1.5 rounded-full overflow-hidden border border-slate-800">
+                    <div 
+                      className={`h-full transition-all duration-300 ${
+                        occupancyPercentage > 100 
+                          ? 'bg-rose-500' 
+                          : occupancyPercentage > 75 
+                            ? 'bg-amber-400' 
+                            : 'bg-emerald-400'
+                      }`} 
+                      style={{ width: `${Math.min(100, occupancyPercentage)}%` }} 
+                    />
+                  </div>
                 </div>
-                <div className="w-full bg-slate-950 h-2 rounded-full overflow-hidden border border-slate-800">
-                  <div 
-                    className={`h-full transition-all duration-300 ${
-                      occupancyPercentage > 100 
-                        ? 'bg-rose-500' 
-                        : occupancyPercentage > 75 
-                          ? 'bg-amber-400' 
-                          : 'bg-emerald-400'
-                    }`} 
-                    style={{ width: `${Math.min(100, occupancyPercentage)}%` }} 
-                  />
-                </div>
-                <span className="text-[9px] text-slate-400 block font-sans">
-                  {occupancyPercentage <= 75 
-                    ? '✓ Cumple RIC N°02 (Reserva ≥ 25%)' 
-                    : occupancyPercentage <= 100 
-                      ? '⚠️ Reserva ajustada (< 25% libre)' 
-                      : '🛑 Excedido: Requiere gabinete de mayor capacidad'}
-                </span>
               </div>
+            )}
+
+            {/* FLOATING ZOOM & VIEW CONTROLS (BOTTOM-RIGHT CORNER) */}
+            <div className="absolute bottom-4 right-4 z-20 flex flex-col items-center bg-slate-900/95 backdrop-blur-md rounded-2xl border border-slate-700/80 shadow-2xl p-1 gap-1 text-slate-300">
+              <button
+                onClick={handleZoomIn}
+                className="p-2 hover:text-white hover:bg-slate-800 rounded-xl transition"
+                title="Acercar Zoom (+)"
+              >
+                <ZoomIn className="w-4 h-4" />
+              </button>
+              <button
+                onClick={handleResetView}
+                className="px-2 py-1 text-[10px] font-mono font-bold text-cyan-400 hover:text-white hover:bg-slate-800 rounded-lg transition"
+                title="Restablecer Vista (100%)"
+              >
+                {Math.round(zoom * 100)}%
+              </button>
+              <button
+                onClick={handleZoomOut}
+                className="p-2 hover:text-white hover:bg-slate-800 rounded-xl transition"
+                title="Alejar Zoom (-)"
+              >
+                <ZoomOut className="w-4 h-4" />
+              </button>
             </div>
 
             {/* SNAP TOAST NOTICE */}
@@ -1756,7 +1828,7 @@ export default function InteractiveBoardTab() {
                   initial={{ opacity: 0, y: 10, scale: 0.95 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                  className="absolute bottom-4 left-4 z-20 bg-slate-900/95 border border-amber-500/80 backdrop-blur-md px-4 py-2.5 rounded-xl text-xs text-amber-200 font-mono shadow-2xl flex items-center gap-2"
+                  className="absolute bottom-16 left-4 z-30 bg-slate-900/95 border border-amber-500/80 backdrop-blur-md px-4 py-2 rounded-xl text-xs text-amber-200 font-mono shadow-2xl flex items-center gap-2"
                 >
                   <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
                   <span>{snapNotice}</span>
@@ -1768,7 +1840,7 @@ export default function InteractiveBoardTab() {
             <svg
               ref={svgRef}
               data-bg="true"
-              className={`w-full h-full min-h-[720px] pt-16 ${
+              className={`w-full h-full min-h-[720px] transition-[padding] duration-200 ${isToolbarCollapsed ? 'pt-0' : 'pt-12'} ${
                 isPanning ? 'cursor-grabbing' : draggingCompId ? 'cursor-grabbing' : activeWireStart ? 'cursor-crosshair' : 'cursor-grab'
               }`}
               onMouseDown={handleSvgMouseDown}

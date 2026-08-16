@@ -1324,6 +1324,25 @@ export default function App() {
                       isSecCertified={contractor.isSecCertified}
                       currentUser={user}
                       onUpdateUserSession={setUser}
+                      onAppendToWorkReport={(summaryText) => {
+                        setWorkReport((prev) => ({
+                          ...prev,
+                          generatedAiReport: prev.generatedAiReport
+                            ? `${prev.generatedAiReport}\n\n${summaryText}`
+                            : summaryText,
+                          briefNotes: prev.briefNotes
+                            ? `${prev.briefNotes} | Diagnóstico IA SEC incorporado.`
+                            : 'Diagnóstico técnico IA SEC incorporado.',
+                        }));
+                      }}
+                      onNavigateToTab={(tab, targetNorm) => {
+                        if (targetNorm && tab === 'norms') {
+                          try {
+                            localStorage.setItem('neovolt_target_ric_norm', targetNorm);
+                          } catch {}
+                        }
+                        setActiveTab(tab);
+                      }}
                     />
                   );
 
@@ -1368,6 +1387,12 @@ export default function App() {
                       customer={customer}
                     />
                   );
+
+                case 'physical':
+                case 'simulator':
+                case 'board':
+                case '7':
+                  return <ProfessionalBoardGeneratorTab />;
 
                 case 'quote':
                 case '8':

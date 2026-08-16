@@ -402,3 +402,15 @@ export interface ElectricalProject {
   versionHistory?: ProjectVersion[];
 }
 
+export interface RicNormRule {
+  id?: string;
+  num: string;
+  title: string;
+  category?: string;
+  summary: string;
+  detailText: string;
+  keyPoints: string[];
+}
+
+
+

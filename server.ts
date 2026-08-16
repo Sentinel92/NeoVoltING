@@ -339,25 +339,8 @@ Haz 3 recomendaciones concisas y accionables destacando:
 
       const ai = getAiClient(customGeminiApiKey);
       if (!ai) {
-        return res.json({
-          analysis: `🔍 **DIAGNÓSTICO ESTÁNDAR (MODO OFFLINE / SIN API KEY):**\n\n` +
-            `Se detecta una consulta técnica en la instalación **${installationType || 'Monofásica 220V'}**.\n\n` +
-            `🚨 **Nivel de Riesgo y EPP Requerido**\n` +
-            `• Riesgo eléctrico moderado/alto. Trabajar siempre sin tensión (corte en IGA) y utilizar guantes aislantes dieléctricos.\n\n` +
-            `🔍 **Diagnóstico de Falla y Causa Raíz**\n` +
-            `• **Síntoma:** ${faultDescription || 'Inspección de tablero / componentes'}\n` +
-            `• **Causa probable:** Sobrecalentamiento por falso contacto en bornes, desbalance de fase o falla de aislamiento a tierra en circuito secundario.\n\n` +
-            `🛡️ **Procedimiento de Descarte Paso a Paso**\n` +
-            `1. Desconectar el Interruptor General Automático (IGA).\n` +
-            `2. Bajar todos los disyuntores de circuito y el diferencial RCD.\n` +
-            `3. Verificar reapriete de bornes de empalme con perillero aislado.\n` +
-            `4. Energizar IGA y subir protecciones una por una para aislar el circuito defectuoso.\n\n` +
-            `📜 **Cita a la Normativa SEC RIC**\n` +
-            `• **RIC N°05 (Sección 6):** Exige protección diferencial de 30mA para todos los circuitos de enchufes y alumbrado.\n` +
-            `• **RIC N°03:** Límites de temperatura y capacidad de transporte en alimentadores EVA libre de halógenos.\n\n` +
-            `🛒 **Lista Sugerida de Insumos y Repuestos**\n` +
-            `• 1x Interruptor Diferencial RCD 2x25A 30mA (o 4P si es Trifásico).\n` +
-            `• Conectores de resorte / Bornes aislados para tableros.`,
+        return res.status(400).json({
+          error: "Error 400 (API_KEY_INVALID): No se encontró una clave de API de Gemini válida configurada en el servidor ni proporcionada por el cliente. Ingrese su API Key en el panel.",
         });
       }
 
@@ -420,7 +403,7 @@ Eres un experto en ingeniería eléctrica (norma SEC/RIC Chile). Responde de for
       const systemInstructionText = "Eres el Copiloto Eléctrico y Consultor Técnico Senior de NEOVOLT, experto en Ingeniería Eléctrica y normativa chilena SEC (Pliegos Técnicos RIC N°01 al N°11). Analizas fotos de tableros, conexiones, disyuntores y fallas para emitir diagnósticos normativos precisos, guiando en instalaciones con pasos numerados, detallando causas probables, medidas de seguridad inmediatas y solución técnica paso a paso.";
 
       const response = await ai.models.generateContent({
-        model: "gemini-3.7-flash",
+        model: "gemini-1.5-flash",
         contents: contentsPayload,
         config: {
           systemInstruction: systemInstructionText,
@@ -430,39 +413,63 @@ Eres un experto en ingeniería eléctrica (norma SEC/RIC Chile). Responde de for
       return res.json({ analysis: response.text || "Análisis completado correctamente." });
     } catch (err: any) {
       console.error("Error in AI Diagnostic Consultant:", err);
-      const isQuotaError = err?.message?.includes("429") || err?.message?.includes("RESOURCE_EXHAUSTED");
-      const isAccessDenied = err?.message?.includes("403") || err?.message?.includes("PERMISSION_DENIED") || err?.message?.includes("denied access");
+      const code = err?.status || err?.code || 500;
+      const errorMsg = err?.message || String(err);
+      return res.status(code >= 400 && code <= 599 ? code : 500).json({
+        error: `Google Gemini API Error (${code}): ${errorMsg}`,
+      });
+    }
+  });
 
-      const faultDesc = req.body?.faultDescription || 'Inspección de tablero / componentes';
-      const instType = req.body?.installationType || 'Monofásica 220V Residencial';
+  // AI Diagnostic Conversation Summarization Route for Work Reports
+  app.post("/api/summarize-diagnostic", async (req, res) => {
+    try {
+      const { chatHistory, customGeminiApiKey, clientName, installationType } = req.body;
+      const ai = getAiClient(customGeminiApiKey);
 
-      if (isAccessDenied || isQuotaError) {
-        return res.json({
-          analysis: `⚠️ **AVISO DEL SISTEMA:** *${isAccessDenied ? 'La clave API por defecto no cuenta con permisos para este modelo. Puedes ingresar tu propia API Key de Gemini en el botón del perfil arriba para habilitar respuestas avanzadas en vivo.' : 'Límite de cuota alcanzado temporalmente en la API Key global.'}*\n\n` +
-            `🔍 **DIAGNÓSTICO TÉCNICO NORMATIVO SEC (MODO RESURGENTE OFFLINE):**\n\n` +
-            `Se analiza la consulta en la instalación **${instType}**.\n\n` +
-            `🚨 **Nivel de Riesgo y EPP Requerido**\n` +
-            `• Riesgo eléctrico moderado/alto. Trabaje siempre sin tensión cortando la energía en el IGA principal y utilice guantes aislantes dieléctricos.\n\n` +
-            `🔍 **Diagnóstico de Falla y Causa Raíz**\n` +
-            `• **Síntoma:** ${faultDesc}\n` +
-            `• **Causa probable:** Sobrecalentamiento por falso contacto en bornes, desbalance de cargas o falla de aislamiento a tierra en circuito derivado.\n\n` +
-            `🛡️ **Procedimiento de Descarte Paso a Paso**\n` +
-            `1. Desconectar el Interruptor General Automático (IGA).\n` +
-            `2. Bajar todos los disyuntores de circuito y el diferencial RCD.\n` +
-            `3. Reorganizar y verificar el apriete de bornes de empalme con perillero aislado.\n` +
-            `4. Energizar IGA y subir protecciones una a una para aislar el circuito defectuoso.\n\n` +
-            `📜 **Cita a la Normativa SEC RIC**\n` +
-            `• **RIC N°05 (Sección 6):** Exige protección diferencial de 30mA para todos los circuitos de enchufes y alumbrado.\n` +
-            `• **RIC N°03:** Capacidades nominales e intensidades admisibles para alimentadores EVA libre de halógenos.\n\n` +
-            `🛒 **Lista Sugerida de Insumos y Repuestos**\n` +
-            `• 1x Interruptor Diferencial RCD 2x25A 30mA (Clase A o AC).\n` +
-            `• Conectores de resorte o bornes aislados para tableros DIN.`,
+      if (!Array.isArray(chatHistory) || chatHistory.length === 0) {
+        return res.status(400).json({ error: "Historial de conversación vacío." });
+      }
+
+      if (!ai) {
+        return res.status(400).json({
+          error: "Error 400 (API_KEY_INVALID): Clave de API de Gemini no disponible.",
         });
       }
 
-      return res.status(500).json({
-        error: `Error al procesar la consulta con Gemini IA: ${err?.message || String(err)}`,
-        details: err?.message || String(err),
+      const formattedHistory = chatHistory
+        .map((m: any) => `${m.role === 'user' ? 'Técnico' : 'Copiloto IA'}: ${m.text}`)
+        .join('\n\n');
+
+      const prompt = `Actúa como un Ingeniero Eléctrico Auditor SEC de Chile.
+Genera un RESUMEN EJECUTIVO Y TÉCNICO de la siguiente conversación de diagnóstico en terreno para ser incorporado directamente en el Informe Oficial de Obra (Work Report).
+
+DATOS:
+- Instalación: ${installationType || 'Monofásica 220V Residencial'}
+- Cliente: ${clientName || 'Cliente Particular'}
+
+HISTORIAL DE CONSULTA:
+${formattedHistory}
+
+ESTRUCTURA EXIGIDA DEL RESUMEN:
+- **1. Motivo de la Intervención / Falla Detectada:** (Breve resumen del problema)
+- **2. Diagnóstico & Causa Raíz Identificada:** (Fundamento técnico eléctrico)
+- **3. Procedimiento & Medidas Correctivas:** (Acciones según pliegos RIC N°01 al N°19)
+- **4. Verificación de Seguridad y Estado de Entrega:** (Ensayos de aislamiento, RCD, puesta a tierra)
+
+Redacta de forma concisa, técnica y ejecutiva en español chileno profesional.`;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-1.5-flash",
+        contents: prompt,
+      });
+
+      return res.json({ summary: response.text });
+    } catch (err: any) {
+      console.error("Error summarizing diagnostic conversation:", err);
+      const code = err?.status || err?.code || 500;
+      return res.status(code >= 400 && code <= 599 ? code : 500).json({
+        error: `Google Gemini API Error (${code}): ${err?.message || String(err)}`,
       });
     }
   });

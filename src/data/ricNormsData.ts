@@ -1,5 +1,7 @@
 import { RicNormRule } from "../types";
 
+export type RicNormItem = RicNormRule;
+
 export const RIC_NORMS_DATA: RicNormRule[] = [
   {
     num: "RIC N°01",
@@ -94,6 +96,48 @@ export const RIC_NORMS_DATA: RicNormRule[] = [
     ]
   },
   {
+    num: "RIC N°07",
+    title: "Instalaciones de Equipos y Motores",
+    summary: "Requisitos para conexión de maquinaria, motores, bombas y transformadores.",
+    detailText: `Regula la conexión de receptores de fuerza motriz y equipamiento especial:
+• Todo motor debe contar con protección contra sobrecargas (relé térmico o guardamotor) y cortocircuitos.
+• Exige seccionamiento visible a la vista del operador para mantención segura.
+• Compensación de factor de potencia con bancos de condensadores si el FP es inferior a 0.93.`,
+    keyPoints: [
+      "Protección por guardamotor o relé térmico calibrado a corriente nominal In.",
+      "Interruptor de desconexión visible en proximidad del equipo.",
+      "Factor de potencia mínimo exigido: 0.93."
+    ]
+  },
+  {
+    num: "RIC N°08",
+    title: "Sistemas de Emergencia y Autonomía",
+    summary: "Generadores, UPS y luminarias de emergencia autónomas.",
+    detailText: `Establece exigencias para suministros de respaldo y seguridad:
+• Alumbrado de emergencia con autonomía mínima de 90 minutos para evacuación expedita.
+• Transferencia automática con enclavamiento mecánico y eléctrico para evitar inyección involuntaria a la red pública.
+• Ventilación y canalizaciones resistentes al fuego en salas de generadores.`,
+    keyPoints: [
+      "Luminarias de emergencia autónomas mín. 90 min.",
+      "Enclavamiento mecánico y eléctrico en tablero de transferencia.",
+      "Canalizaciones resistentes al fuego en vías de evacuación."
+    ]
+  },
+  {
+    num: "RIC N°09",
+    title: "Sistemas de Autogeneración (Ley Net Billing)",
+    summary: "Inversores solares fotovoltaicos, protecciones anti-isla y empalmes bidireccionales.",
+    detailText: `Norma técnica para instalaciones de generación distribuida para autoconsumo:
+• Inversores certificados por la SEC con protección anti-isla integrada.
+• Interruptor de desconexión rápida accesible para bomberos y personal de distribución.
+• Rotulado de advertencia reflectante en tableros: "PELIGRO: INSTALACIÓN CON AUTOGENERACIÓN".`,
+    keyPoints: [
+      "Inversor con función de desconexión anti-isla certificada.",
+      "Disyuntor de corte visible para desconexión de emergencia.",
+      "Rotulación de advertencia visible en tablero principal."
+    ]
+  },
+  {
     num: "RIC N°10",
     title: "Instalaciones de Uso General y Viviendas",
     summary: "Límites de centros por circuito y circuitos dedicados para cargas pesadas.",
@@ -108,6 +152,48 @@ export const RIC_NORMS_DATA: RicNormRule[] = [
       "Enchufes dobles/triples con puenteado interno (solo 3 cables: L, N, PE).",
       "Máximo 10 centros por cto enchufes (16A, 2.5mm²).",
       "Cargas >1500W EXIGEN circuito exclusivo independiente."
+    ]
+  },
+  {
+    num: "RIC N°11",
+    title: "Instalaciones Especiales y Locales Húmedos",
+    summary: "Piscinas, saunas, recintos médicos y ambientes con riesgo de explosión.",
+    detailText: `Regula los requisitos de seguridad en recintos con riesgos particulares:
+• Zonas de volumen 0, 1 y 2 en baños y piscinas con protecciones MBTS (Muy Baja Tensión de Seguridad <= 12V AC).
+• Diferenciales de alta sensibilidad (10mA o 30mA) y grado IP mínimo IPX4 / IPX7 según zona.
+• Conexión equipotencial suplementaria obligatoria en todas las canalizaciones y armaduras metálicas.`,
+    keyPoints: [
+      "Volúmenes de seguridad y grado IP específico para baños y piscinas.",
+      "Transformadores de aislamiento para recintos de cuidado médico.",
+      "Equipotencialidad suplementaria en zonas húmedas."
+    ]
+  },
+  {
+    num: "RIC N°15",
+    title: "Infraestructura de Recarga de Vehículos Eléctricos (EV)",
+    summary: "Cargadores Wallbox, canalizaciones dedicadas y protecciones Tipo B / A-EV.",
+    detailText: `Especificaciones para la electromovilidad:
+• Circuito exclusivo desde el tablero principal con disyuntor dedicado de capacidad según potencia del cargador.
+• Interruptor diferencial Clase A con detección de corriente continua de 6mA (Clase B o A-EV).
+• Factor de simultaneidad igual a 1.0 para el cálculo de potencia y caída de tensión.`,
+    keyPoints: [
+      "Circuito exclusivo con factor de simultaneidad 1.0.",
+      "Diferencial Tipo B o Clase A con filtro DC 6mA.",
+      "Protector de sobretensión DPS obligatorio en tablero."
+    ]
+  },
+  {
+    num: "RIC N°19",
+    title: "Puesta en Servicio, Pruebas y Certificación TE1",
+    summary: "Protocolo de ensayos: aislamiento > 1 MΩ, prueba de disparo RCD y resistencia de tierra.",
+    detailText: `Define los ensayos y verificaciones obligatorias previas a la puesta en servicio y trámite TE1:
+• Ensayo de resistencia de aislamiento con megóhmetro a 500V DC: Mínimo 1.0 MΩ entre conductores activos y tierra.
+• Verificación de disparo de todos los diferenciales con instrumento de prueba de RCD (< 300 ms a 30mA).
+• Medición de continuidad del conductor de protección PE en todos los puntos y prueba de resistencia de tierra.`,
+    keyPoints: [
+      "Resistencia de aislamiento >= 1.0 MΩ a 500V DC.",
+      "Prueba de disparo de todos los RCD con telurómetro/probador.",
+      "Requisito fundamental para aprobación de Declaración TE1 SEC."
     ]
   }
 ];
