@@ -7,9 +7,11 @@ import {
   Layers, X, Check, Activity, Sliders, Building2,
   ZoomIn, ZoomOut, Maximize2, Move, Plus, Wand2,
   ArrowLeft, ArrowRight, Settings, ShieldCheck, Gauge,
-  Eye, EyeOff, ChevronDown, ChevronUp, SlidersHorizontal
+  Eye, EyeOff, ChevronDown, ChevronUp, SlidersHorizontal,
+  Flame, Volume2, VolumeX, RefreshCw, Power
 } from 'lucide-react';
 import { ClientRecord, RoomData, HighAppliance } from '../types';
+import { electricalAudio } from '../utils/electricalAudio';
 
 export type TerminalType = 'L' | 'N' | 'PE' | 'L1' | 'L2' | 'L3';
 
@@ -34,6 +36,9 @@ export interface InteractiveComponent {
   ampacity?: number;
   poles?: number;
   dinModules?: number;
+  isTripped?: boolean;
+  isOff?: boolean;
+  trippedReason?: string;
 }
 
 export interface Wire {
@@ -43,6 +48,41 @@ export interface Wire {
   toCompId: string;
   toTermId: string;
   color: string;
+}
+
+export interface ActiveElectricalFault {
+  id: string;
+  type: 'SHORT_CIRCUIT_LN' | 'SHORT_CIRCUIT_PHASE_PHASE' | 'GROUND_FAULT_PE' | 'NEUTRAL_GROUND_LOOP' | 'REVERSE_POLARITY' | 'OVERLOAD';
+  title: string;
+  description: string;
+  normReference: string;
+  x: number;
+  y: number;
+  wireId?: string;
+  fromTerminalLabel?: string;
+  toTerminalLabel?: string;
+  trippedCompId?: string;
+  trippedCompName?: string;
+  iccAmps: number;
+  timeMs: number;
+}
+
+export interface SparkParticle {
+  id: number;
+  x: number;
+  y: number;
+  tx: number;
+  ty: number;
+  color: string;
+  size: number;
+}
+
+export interface LoadPowerStatus {
+  status: 'OPERATIONAL' | 'NO_NEUTRAL' | 'NO_PHASE' | 'NO_GROUND_PE' | 'TRIPPED_PROTECTION';
+  voltage: number;
+  currentAmps: number;
+  powerWatts: number;
+  message: string;
 }
 
 const DEMO_CLIENTS = [
@@ -119,6 +159,15 @@ export default function InteractiveBoardTab() {
   const [isEnergySimulated, setIsEnergySimulated] = useState<boolean>(false);
   const [isWiringVerifierActive, setIsWiringVerifierActive] = useState<boolean>(false);
   const [verifierStep, setVerifierStep] = useState<number>(0);
+
+  // Electrical Simulation & Fault Engine States
+  const [activeFault, setActiveFault] = useState<ActiveElectricalFault | null>(null);
+  const [sparkParticles, setSparkParticles] = useState<SparkParticle[]>([]);
+  const [isScreenShaking, setIsScreenShaking] = useState<boolean>(false);
+  const [isAudioMuted, setIsAudioMuted] = useState<boolean>(false);
+  const [wiringMode, setWiringMode] = useState<'realistic' | 'strict_assisted'>('realistic');
+  const [showFaultDetailsModal, setShowFaultDetailsModal] = useState<boolean>(false);
+  const [poweredLoadsMap, setPoweredLoadsMap] = useState<Record<string, LoadPowerStatus>>({});
 
   // Zoom & Pan Navigation Controls
   const [zoom, setZoom] = useState<number>(1);
@@ -825,19 +874,18 @@ export default function InteractiveBoardTab() {
 
   const getTerminalColor = (type: TerminalType) => {
     switch(type) {
-      case 'L1': return '#ef4444'; // Rojo
-      case 'L2': return '#475569'; // Gris Oscuro / Negro
-      case 'L3': return '#d97706'; // Marrón / Ámbar
-      case 'L': return '#ef4444';  // Rojo
-      case 'N': return '#38bdf8';  // Azul Claro
-      case 'PE': return '#22c55e'; // Verde
+      case 'L1': return '#ef4444'; // Rojo Fase 1
+      case 'L2': return '#475569'; // Gris Oscuro / Negro Fase 2
+      case 'L3': return '#d97706'; // Marrón / Ámbar Fase 3
+      case 'L': return '#ef4444';  // Rojo Fase Monofásica
+      case 'N': return '#38bdf8';  // Azul Claro Neutro
+      case 'PE': return '#22c55e'; // Verde Tierra PE
       default: return '#cbd5e1';
     }
   };
 
   const areTerminalsCompatible = (t1: TerminalType, t2: TerminalType) => {
     if (t1 === t2) return true;
-    // L1, L2, L3 son todas fases en Trifásico
     if ((t1 === 'L' || t1 === 'L1' || t1 === 'L2' || t1 === 'L3') && 
         (t2 === 'L' || t2 === 'L1' || t2 === 'L2' || t2 === 'L3')) {
       return true;
@@ -845,6 +893,422 @@ export default function InteractiveBoardTab() {
     return false;
   };
 
+  // Spark and Arc Flash Particle Generator
+  const generateSparksAt = (x: number, y: number) => {
+    const particles: SparkParticle[] = [];
+    const colors = ['#facc15', '#f97316', '#ef4444', '#ffffff', '#38bdf8'];
+    for (let i = 0; i < 22; i++) {
+      const angle = (Math.PI * 2 * i) / 22 + (Math.random() * 0.4 - 0.2);
+      const dist = 30 + Math.random() * 55;
+      particles.push({
+        id: Date.now() + i,
+        x,
+        y,
+        tx: Math.cos(angle) * dist,
+        ty: Math.sin(angle) * dist,
+        color: colors[Math.floor(Math.random() * colors.length)],
+        size: 2.5 + Math.random() * 3.5,
+      });
+    }
+    setSparkParticles(particles);
+  };
+
+  // --- REAL-WORLD ELECTRICAL SOLVER & SHORT CIRCUIT ENGINE ---
+  const evaluateElectricalCircuits = (
+    currentComps: InteractiveComponent[],
+    currentWires: Wire[],
+    st: 'MONOFASICO_220' | 'TRIFASICO_380',
+    currentLoads: { id: string; name: string; power: number }[]
+  ) => {
+    // 1. Build Adjacency Graph of Terminal Connections
+    const adj = new Map<string, Set<string>>();
+    const addEdge = (a: string, b: string) => {
+      if (!adj.has(a)) adj.set(a, new Set());
+      if (!adj.has(b)) adj.set(b, new Set());
+      adj.get(a)!.add(b);
+      adj.get(b)!.add(a);
+    };
+
+    // A. Add wire edges
+    currentWires.forEach(w => {
+      addEdge(`${w.fromCompId}:${w.fromTermId}`, `${w.toCompId}:${w.toTermId}`);
+    });
+
+    // B. Internal component bus connections (when breaker is closed & not tripped)
+    currentComps.forEach(c => {
+      if (c.type === 'BAR_N') {
+        for (let i = 0; i < 7; i++) {
+          addEdge(`${c.id}:bar_n_${i}`, `${c.id}:bar_n_${i + 1}`);
+        }
+      } else if (c.type === 'BAR_PE') {
+        for (let i = 0; i < 7; i++) {
+          addEdge(`${c.id}:bar_pe_${i}`, `${c.id}:bar_pe_${i + 1}`);
+        }
+      } else if (c.type === 'IGA' && !c.isTripped && !c.isOff) {
+        if (st === 'TRIFASICO_380') {
+          addEdge(`${c.id}:iga_in_l1`, `${c.id}:iga_out_l1`);
+          addEdge(`${c.id}:iga_in_l2`, `${c.id}:iga_out_l2`);
+          addEdge(`${c.id}:iga_in_l3`, `${c.id}:iga_out_l3`);
+          addEdge(`${c.id}:iga_in_n`, `${c.id}:iga_out_n`);
+        } else {
+          addEdge(`${c.id}:iga_in_l`, `${c.id}:iga_out_l`);
+          addEdge(`${c.id}:iga_in_n`, `${c.id}:iga_out_n`);
+        }
+      } else if (c.type === 'RCD' && !c.isTripped && !c.isOff) {
+        if (st === 'TRIFASICO_380') {
+          addEdge(`${c.id}:rcd_in_l1`, `${c.id}:rcd_out_l1`);
+          addEdge(`${c.id}:rcd_in_l2`, `${c.id}:rcd_out_l2`);
+          addEdge(`${c.id}:rcd_in_l3`, `${c.id}:rcd_out_l3`);
+          addEdge(`${c.id}:rcd_in_n`, `${c.id}:rcd_out_n`);
+        } else {
+          addEdge(`${c.id}:rcd_in_l`, `${c.id}:rcd_out_l`);
+          addEdge(`${c.id}:rcd_in_n`, `${c.id}:rcd_out_n`);
+        }
+      } else if (c.type === 'MCB' && !c.isTripped && !c.isOff) {
+        const inTerm = c.terminals.find(t => t.id.includes('_in_'));
+        const outTerm = c.terminals.find(t => t.id.includes('_out_'));
+        if (inTerm && outTerm) {
+          addEdge(`${c.id}:${inTerm.id}`, `${c.id}:${outTerm.id}`);
+        }
+      }
+    });
+
+    // Helper: Traverse Connected Net
+    const getConnectedNet = (startKey: string): Set<string> => {
+      const visited = new Set<string>();
+      const queue = [startKey];
+      visited.add(startKey);
+      while (queue.length > 0) {
+        const curr = queue.shift()!;
+        const neighbors = adj.get(curr);
+        if (neighbors) {
+          neighbors.forEach(n => {
+            if (!visited.has(n)) {
+              visited.add(n);
+              queue.push(n);
+            }
+          });
+        }
+      }
+      return visited;
+    };
+
+    // Calculate source nets from GRID
+    let phaseNetL = new Set<string>();
+    let phaseNetL1 = new Set<string>();
+    let phaseNetL2 = new Set<string>();
+    let phaseNetL3 = new Set<string>();
+    const neutralNet = getConnectedNet('grid:grid_out_n');
+    const earthNet = getConnectedNet('grid:grid_out_pe');
+
+    if (st === 'TRIFASICO_380') {
+      phaseNetL1 = getConnectedNet('grid:grid_out_l1');
+      phaseNetL2 = getConnectedNet('grid:grid_out_l2');
+      phaseNetL3 = getConnectedNet('grid:grid_out_l3');
+    } else {
+      phaseNetL = getConnectedNet('grid:grid_out_l');
+    }
+
+    const allPhaseTerminals = new Set<string>([
+      ...phaseNetL, ...phaseNetL1, ...phaseNetL2, ...phaseNetL3
+    ]);
+
+    // Check 1: Cortocircuito Franco Fase-Neutro (L - N)
+    let lnShortTerminal: string | null = null;
+    allPhaseTerminals.forEach(termKey => {
+      if (neutralNet.has(termKey)) {
+        lnShortTerminal = termKey;
+      }
+    });
+
+    if (lnShortTerminal) {
+      const [cId, tId] = (lnShortTerminal as string).split(':');
+      const comp = currentComps.find(c => c.id === cId);
+      const term = comp?.terminals.find(t => t.id === tId);
+      const coords = { x: (comp?.x || 300) + (term?.x || 20), y: (comp?.y || 200) + (term?.y || 20) };
+
+      // Find closest protecting breaker
+      const downstreamMcb = currentComps.find(c => c.type === 'MCB' && (phaseNetL.has(`${c.id}:${c.terminals[0]?.id}`) || c.id === cId));
+      const trippedBreaker = downstreamMcb || currentComps.find(c => c.type === 'IGA') || currentComps[0];
+
+      return {
+        hasFault: true,
+        fault: {
+          id: `fault_ln_${Date.now()}`,
+          type: 'SHORT_CIRCUIT_LN' as const,
+          title: 'Cortocircuito Franco Fase - Neutro (220V)',
+          description: `Se detectó un puente directo de impedancia cero entre Fase (L) y Neutro (N) en "${comp?.name || 'Bornera'}". La sobrecorriente instantánea alcanzó Icc ≈ 6.000A, accionando el disparador magnético de protección.`,
+          normReference: 'RIC N°02 Art. 5 (Protección contra Cortocircuitos) & RIC N°03',
+          x: coords.x,
+          y: coords.y,
+          trippedCompId: trippedBreaker?.id,
+          trippedCompName: trippedBreaker?.name,
+          iccAmps: 6000,
+          timeMs: 15,
+        },
+        poweredLoads: {},
+      };
+    }
+
+    // Check 2: Cortocircuito Entre Fases (380V Trifásico)
+    if (st === 'TRIFASICO_380') {
+      let interphaseShort: string | null = null;
+      phaseNetL1.forEach(t => { if (phaseNetL2.has(t) || phaseNetL3.has(t)) interphaseShort = t; });
+      phaseNetL2.forEach(t => { if (phaseNetL3.has(t)) interphaseShort = t; });
+
+      if (interphaseShort) {
+        const [cId, tId] = (interphaseShort as string).split(':');
+        const comp = currentComps.find(c => c.id === cId);
+        const term = comp?.terminals.find(t => t.id === tId);
+        const coords = { x: (comp?.x || 300) + (term?.x || 20), y: (comp?.y || 200) + (term?.y || 20) };
+        const iga = currentComps.find(c => c.type === 'IGA');
+
+        return {
+          hasFault: true,
+          fault: {
+            id: `fault_phase_${Date.now()}`,
+            type: 'SHORT_CIRCUIT_PHASE_PHASE' as const,
+            title: 'Cortocircuito Entre Fases (380V Bifásico / Trifásico)',
+            description: `Se ha producido contacto directo entre dos conductores de fase activa (380V). Generó un arco eléctrico de gran energía térmica y sobrecorriente extrema Icc ≈ 8.500A.`,
+            normReference: 'RIC N°02 Art. 5 & RIC N°03',
+            x: coords.x,
+            y: coords.y,
+            trippedCompId: iga?.id,
+            trippedCompName: iga?.name || 'IGA 4P',
+            iccAmps: 8500,
+            timeMs: 12,
+          },
+          poweredLoads: {},
+        };
+      }
+    }
+
+    // Check 3: Falla a Tierra Directa (Fase a PE)
+    let groundFaultTerminal: string | null = null;
+    allPhaseTerminals.forEach(termKey => {
+      if (earthNet.has(termKey)) {
+        groundFaultTerminal = termKey;
+      }
+    });
+
+    if (groundFaultTerminal) {
+      const [cId, tId] = (groundFaultTerminal as string).split(':');
+      const comp = currentComps.find(c => c.id === cId);
+      const term = comp?.terminals.find(t => t.id === tId);
+      const coords = { x: (comp?.x || 300) + (term?.x || 20), y: (comp?.y || 200) + (term?.y || 20) };
+      const rcd = currentComps.find(c => c.type === 'RCD') || currentComps.find(c => c.type === 'IGA');
+
+      return {
+        hasFault: true,
+        fault: {
+          id: `fault_pe_${Date.now()}`,
+          type: 'GROUND_FAULT_PE' as const,
+          title: 'Disparo por Falla a Tierra (Fase a Tierra PE)',
+          description: `La Fase activa está tocando directamente la Barra de Tierra PE o masa metálica. El Protector Diferencial (RCD 30mA) detectó la fuga de corriente y actuó en menos de 20ms salvaguardando la vida humana.`,
+          normReference: 'RIC N°05 (Protección contra Contactos Indirectos) & RIC N°02',
+          x: coords.x,
+          y: coords.y,
+          trippedCompId: rcd?.id,
+          trippedCompName: rcd?.name || 'RCD 30mA',
+          iccAmps: 2200,
+          timeMs: 18,
+        },
+        poweredLoads: {},
+      };
+    }
+
+    // Check 4: Mezcla de Neutro y Tierra Post-Diferencial (N post-RCD a PE)
+    const rcdOutNKey = 'rcd:rcd_out_n';
+    if (adj.has(rcdOutNKey)) {
+      const rcdNeutralNet = getConnectedNet(rcdOutNKey);
+      let rcdGroundLoop = false;
+      rcdNeutralNet.forEach(t => {
+        if (earthNet.has(t) || t.startsWith('bar_pe:')) {
+          rcdGroundLoop = true;
+        }
+      });
+
+      if (rcdGroundLoop) {
+        const rcd = currentComps.find(c => c.type === 'RCD');
+        const coords = { x: (rcd?.x || 200) + 60, y: (rcd?.y || 150) + 100 };
+        return {
+          hasFault: true,
+          fault: {
+            id: `fault_rcd_loop_${Date.now()}`,
+            type: 'NEUTRAL_GROUND_LOOP' as const,
+            title: 'Disparo de RCD por Mezcla de Neutro y Tierra',
+            description: `El conductor Neutro posterior al Diferencial está conectado a la barra de Tierra PE. El desbalance residual (IΔn > 30mA) provocó el disparo instantáneo del RCD al energizar.`,
+            normReference: 'RIC N°02 Art. 6 & RIC N°05',
+            x: coords.x,
+            y: coords.y,
+            trippedCompId: rcd?.id,
+            trippedCompName: rcd?.name || 'RCD 30mA',
+            iccAmps: 350,
+            timeMs: 25,
+          },
+          poweredLoads: {},
+        };
+      }
+    }
+
+    // Evaluate powered status for each load
+    const poweredLoads: Record<string, LoadPowerStatus> = {};
+    currentLoads.forEach((load, idx) => {
+      const lKey = `load_comp_${idx}:load_${idx}_l`;
+      const nKey = `load_comp_${idx}:load_${idx}_n`;
+      const peKey = `load_comp_${idx}:load_${idx}_pe`;
+
+      const hasPhase = allPhaseTerminals.has(lKey);
+      const hasNeutral = neutralNet.has(nKey);
+      const hasPE = earthNet.has(peKey);
+
+      const volt = st === 'TRIFASICO_380' ? 220 : 220;
+      const current = Math.round((load.power / volt) * 10) / 10;
+
+      if (hasPhase && hasNeutral && hasPE) {
+        poweredLoads[load.id] = {
+          status: 'OPERATIONAL',
+          voltage: volt,
+          currentAmps: current,
+          powerWatts: load.power,
+          message: `✓ Operativo y seguro (${volt}V - ${current}A). Cumple RIC N°02 y RIC N°05.`,
+        };
+      } else if (hasPhase && hasNeutral && !hasPE) {
+        poweredLoads[load.id] = {
+          status: 'NO_GROUND_PE',
+          voltage: volt,
+          currentAmps: current,
+          powerWatts: load.power,
+          message: `⚠️ Operativo pero SIN Tierra PE. Alto riesgo ante contacto indirecto (RIC N°05).`,
+        };
+      } else if (hasPhase && !hasNeutral) {
+        poweredLoads[load.id] = {
+          status: 'NO_NEUTRAL',
+          voltage: 0,
+          currentAmps: 0,
+          powerWatts: 0,
+          message: `🛑 Circuito Abierto: Falta retorno de Neutro hacia la barra colectora.`,
+        };
+      } else {
+        poweredLoads[load.id] = {
+          status: 'NO_PHASE',
+          voltage: 0,
+          currentAmps: 0,
+          powerWatts: 0,
+          message: `🛑 Sin alimentación de Fase desde el disyuntor automático.`,
+        };
+      }
+    });
+
+    return {
+      hasFault: false,
+      poweredLoads,
+    };
+  };
+
+  // Toggle & Run Dynamic Energy Simulation
+  const handleToggleEnergySimulation = (forceState?: boolean) => {
+    const willSimulate = forceState !== undefined ? forceState : !isEnergySimulated;
+
+    if (!willSimulate) {
+      setIsEnergySimulated(false);
+      setActiveFault(null);
+      setSparkParticles([]);
+      setPoweredLoadsMap({});
+      setIsScreenShaking(false);
+      electricalAudio.stopHum();
+      setSnapNotice("🛑 Simulación de energía desactivada.");
+      setTimeout(() => setSnapNotice(null), 2500);
+      return;
+    }
+
+    // Run electrical solver
+    const result = evaluateElectricalCircuits(components, wires, supplyType, loads);
+
+    if (result.hasFault && result.fault) {
+      setIsEnergySimulated(true);
+      setActiveFault(result.fault);
+      setPoweredLoadsMap({});
+
+      // Play audio effect
+      if (result.fault.type === 'GROUND_FAULT_PE' || result.fault.type === 'NEUTRAL_GROUND_LOOP') {
+        electricalAudio.playRcdTripSound();
+      } else {
+        electricalAudio.playArcFlashSound();
+      }
+
+      // Screen shaking & sparks
+      setIsScreenShaking(true);
+      setTimeout(() => setIsScreenShaking(false), 450);
+      generateSparksAt(result.fault.x, result.fault.y);
+
+      // Trip the protective component
+      if (result.fault.trippedCompId) {
+        setComponents(prev => prev.map(c => 
+          c.id === result.fault!.trippedCompId
+            ? { ...c, isTripped: true, isOff: true, trippedReason: result.fault!.title }
+            : c
+        ));
+      }
+
+      setSnapNotice(`💥 ¡DISPARO DE PROTECCIÓN POR ${result.fault.title.toUpperCase()}!`);
+    } else {
+      setIsEnergySimulated(true);
+      setActiveFault(null);
+      setSparkParticles([]);
+      setPoweredLoadsMap(result.poweredLoads);
+      electricalAudio.startNormalHum();
+      setSnapNotice("⚡ Tablero energizado correctamente: 220V/380V estables sin cortocircuitos (RIC N°02).");
+      setTimeout(() => setSnapNotice(null), 3500);
+    }
+  };
+
+  // Rearm All Protective Breakers
+  const handleRearmAllBreakers = () => {
+    setComponents(prev => prev.map(c => ({
+      ...c,
+      isTripped: false,
+      isOff: false,
+      trippedReason: undefined,
+    })));
+    setActiveFault(null);
+    setSparkParticles([]);
+    electricalAudio.playBreakerTripSound();
+    setSnapNotice("🔄 Todas las protecciones IGA, RCD y MCB han sido rearmadas.");
+    setTimeout(() => setSnapNotice(null), 2500);
+
+    // If currently simulating, re-evaluate circuit
+    if (isEnergySimulated) {
+      setTimeout(() => {
+        handleToggleEnergySimulation(true);
+      }, 100);
+    }
+  };
+
+  // Toggle individual component ON / OFF / REARM
+  const handleToggleComponentSwitch = (compId: string) => {
+    setComponents(prev => prev.map(c => {
+      if (c.id === compId) {
+        const nextOff = c.isTripped ? false : !c.isOff;
+        return {
+          ...c,
+          isTripped: false,
+          isOff: nextOff,
+          trippedReason: undefined,
+        };
+      }
+      return c;
+    }));
+    electricalAudio.playBreakerTripSound();
+
+    if (isEnergySimulated) {
+      setTimeout(() => {
+        handleToggleEnergySimulation(true);
+      }, 100);
+    }
+  };
+
+  // Terminal click handler (Allows free realistic cross-wiring to test faults)
   const handleTerminalClick = (e: React.MouseEvent, comp: InteractiveComponent, terminal: InteractiveTerminal) => {
     e.stopPropagation();
     e.preventDefault();
@@ -858,27 +1322,32 @@ export default function InteractiveBoardTab() {
         setActiveWireStart(null);
         return;
       }
-      
-      // BLOQUEO DE SNAP POR INCOMPATIBILIDAD SEC
-      if (!areTerminalsCompatible(activeWireStart.term.type, terminal.type)) {
-        setSnapNotice(`🚫 BLOQUEADO POR NORMA SEC: No se puede conectar ${activeWireStart.term.type} con ${terminal.type}`);
+
+      // Check strict mode block vs realistic freedom
+      if (wiringMode === 'strict_assisted' && !areTerminalsCompatible(activeWireStart.term.type, terminal.type)) {
+        setSnapNotice(`🚫 BLOQUEADO POR MODO ASISTIDO: Conexión ${activeWireStart.term.type} con ${terminal.type} causará falla.`);
         setTimeout(() => setSnapNotice(null), 3500);
         setActiveWireStart(null);
         return;
       }
 
-      const wireColor = getTerminalColor(terminal.type);
+      const wireColor = getTerminalColor(activeWireStart.term.type);
       const newWire: Wire = {
         id: `w_${Date.now()}`,
         fromCompId: activeWireStart.compId,
         fromTermId: activeWireStart.term.id,
         toCompId: comp.id,
         toTermId: terminal.id,
-        color: wireColor
+        color: wireColor,
       };
 
       setWires([...wires, newWire]);
       setActiveWireStart(null);
+
+      if (!areTerminalsCompatible(activeWireStart.term.type, terminal.type)) {
+        setSnapNotice(`⚠️ Conexión cruzada ${activeWireStart.term.type} ↔ ${terminal.type} realizada. ¡Pulsa "Energizar ⚡" para simular el comportamiento!`);
+        setTimeout(() => setSnapNotice(null), 4000);
+      }
     }
   };
 
@@ -1447,8 +1916,39 @@ export default function InteractiveBoardTab() {
                   </div>
                 </div>
 
-                {/* RIGHT SECTION: PRIMARY ACTIONS + SECONDARY TOOLTIP ICON GROUP + DISCRETE COLLAPSE */}
-                <div className="flex items-center gap-2 text-xs">
+                {/* RIGHT SECTION: PRIMARY ACTIONS + REARM + WIRING MODE + AUDIO + EXPORT */}
+                <div className="flex items-center gap-2 text-xs flex-wrap">
+                  {/* WIRING MODE SELECTOR (REALISTIC VS ASSISTED) */}
+                  <button
+                    onClick={() => {
+                      const next = wiringMode === 'realistic' ? 'strict_assisted' : 'realistic';
+                      setWiringMode(next);
+                      setSnapNotice(next === 'realistic' ? '⚡ Modo Realista Activo: Puedes conectar libremente cualquier terminal. ¡Si hay cortocircuito, disparará las protecciones al energizar!' : '🛡️ Modo Asistido Activo: Bloquea conexiones incompatibles antes de cablear.');
+                      setTimeout(() => setSnapNotice(null), 4000);
+                    }}
+                    className={`px-2.5 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition border ${
+                      wiringMode === 'realistic'
+                        ? 'bg-amber-500/15 text-amber-300 border-amber-500/30 hover:bg-amber-500/25'
+                        : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
+                    }`}
+                    title={wiringMode === 'realistic' ? 'Modo Realista: Permite fallas y cortocircuitos reales al energizar' : 'Modo Asistido: Validación previa'}
+                  >
+                    <Flame className={`w-3.5 h-3.5 ${wiringMode === 'realistic' ? 'text-amber-400' : 'text-slate-400'}`} />
+                    <span className="hidden sm:inline">{wiringMode === 'realistic' ? 'Modo Realista' : 'Modo Asistido'}</span>
+                  </button>
+
+                  {/* REARM ALL BREAKERS (VISIBLE OR HIGHLIGHTED IF TRIPPED) */}
+                  {components.some(c => c.isTripped || c.isOff) && (
+                    <button
+                      onClick={handleRearmAllBreakers}
+                      className="px-3 py-1.5 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white font-black rounded-xl text-xs flex items-center gap-1.5 shadow-lg animate-pulse transition"
+                      title="Rearmar y levantar todas las palancas de disyuntores e IGA disparados"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5 text-amber-200" />
+                      <span>Rearmar Protecciones</span>
+                    </button>
+                  )}
+
                   {/* PRIMARY ACTION: VERIFICAR Y AUTOCABLEAR */}
                   <button
                     onClick={handleVerifyAndAutoWire}
@@ -1461,21 +1961,40 @@ export default function InteractiveBoardTab() {
 
                   {/* PRIMARY ACTION: SIMULAR ENERGIA */}
                   <button
-                    onClick={() => {
-                      const next = !isEnergySimulated;
-                      setIsEnergySimulated(next);
-                      setSnapNotice(next ? "⚡ Energía simulada activada: circuito energizado y componentes encendidos." : "🛑 Simulación de energía desactivada.");
-                      setTimeout(() => setSnapNotice(null), 3000);
-                    }}
-                    className={`px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all shadow-sm border ${
-                      isEnergySimulated
-                        ? 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 border-emerald-300 shadow-emerald-500/40 animate-pulse'
+                    onClick={() => handleToggleEnergySimulation()}
+                    className={`px-3.5 py-1.5 rounded-xl font-black text-xs flex items-center gap-1.5 transition-all shadow-md border ${
+                      activeFault
+                        ? 'bg-rose-600 hover:bg-rose-500 text-white border-rose-400 shadow-rose-600/40 animate-pulse'
+                        : isEnergySimulated
+                        ? 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 border-emerald-300 shadow-emerald-500/40'
                         : 'bg-slate-800 hover:bg-slate-700 text-emerald-400 border-emerald-500/40'
                     }`}
-                    title="Simular flujo de energía eléctrica sobre los cables validados"
+                    title="Simular flujo de energía eléctrica sobre los cables y probar respuesta de protecciones"
                   >
-                    <Zap className={`w-3.5 h-3.5 ${isEnergySimulated ? 'fill-current text-slate-950 animate-bounce' : 'text-emerald-400'}`} />
-                    <span>{isEnergySimulated ? 'Energía ON ⚡' : 'Simular'}</span>
+                    {activeFault ? (
+                      <>
+                        <Flame className="w-3.5 h-3.5 text-yellow-300 animate-bounce" />
+                        <span>Falla / Corto 💥</span>
+                      </>
+                    ) : (
+                      <>
+                        <Zap className={`w-3.5 h-3.5 ${isEnergySimulated ? 'fill-current text-slate-950 animate-bounce' : 'text-emerald-400'}`} />
+                        <span>{isEnergySimulated ? 'Energía ON ⚡' : 'Energizar ⚡'}</span>
+                      </>
+                    )}
+                  </button>
+
+                  {/* AUDIO MUTE TOGGLE */}
+                  <button
+                    onClick={() => {
+                      const nextMute = !isAudioMuted;
+                      setIsAudioMuted(nextMute);
+                      electricalAudio.setMuted(nextMute);
+                    }}
+                    className="p-1.5 bg-slate-950/80 hover:bg-slate-800 text-slate-300 hover:text-white rounded-xl border border-slate-800 transition"
+                    title={isAudioMuted ? 'Activar Sonidos de Arco y Protecciones' : 'Silenciar Efectos de Audio'}
+                  >
+                    {isAudioMuted ? <VolumeX className="w-3.5 h-3.5 text-slate-500" /> : <Volume2 className="w-3.5 h-3.5 text-cyan-400" />}
                   </button>
 
                   {/* SECONDARY ACTIONS GROUP: ICONS WITH TOOLTIPS */}
@@ -1841,6 +2360,8 @@ export default function InteractiveBoardTab() {
               ref={svgRef}
               data-bg="true"
               className={`w-full h-full min-h-[720px] transition-[padding] duration-200 ${isToolbarCollapsed ? 'pt-0' : 'pt-12'} ${
+                isScreenShaking ? 'screen-shake-effect' : ''
+              } ${
                 isPanning ? 'cursor-grabbing' : draggingCompId ? 'cursor-grabbing' : activeWireStart ? 'cursor-crosshair' : 'cursor-grab'
               }`}
               onMouseDown={handleSvgMouseDown}
@@ -2056,7 +2577,79 @@ export default function InteractiveBoardTab() {
                       ) : comp.type === 'GRID' ? (
                         <rect x={0} y={0} width={comp.w} height={comp.h} fill="#334155" rx="8" stroke="#94a3b8" strokeWidth="2" />
                       ) : (
-                        <rect x={0} y={0} width={comp.w} height={comp.h} fill="#0f172a" rx="6" stroke="#475569" strokeWidth="2" />
+                        <rect x={0} y={0} width={comp.w} height={comp.h} fill="#0f172a" rx="6" stroke={comp.isTripped ? "#ef4444" : "#475569"} strokeWidth="2" />
+                      )}
+
+                      {/* MECHANICAL DIN SWITCH LEVER & STATUS FOR BREAKERS (IGA, RCD, MCB) */}
+                      {(comp.type === 'IGA' || comp.type === 'RCD' || comp.type === 'MCB') && (
+                        <g 
+                          transform={`translate(${comp.w / 2 - 12}, 48)`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleToggleComponentSwitch(comp.id);
+                          }}
+                          className="cursor-pointer"
+                        >
+                          {/* Switch recess slot */}
+                          <rect x={0} y={0} width={24} height={32} rx={3} fill="#020617" stroke="#334155" strokeWidth={1} />
+                          
+                          {/* Switch handle lever: UP (ON / Green), DOWN (OFF / Slate), TRIPPED (Down/Red) */}
+                          {comp.isTripped ? (
+                            <g>
+                              <rect x={2} y={16} width={20} height={14} rx={2} fill="#ef4444" stroke="#fca5a5" strokeWidth={1} />
+                              <text x={12} y={26} textAnchor="middle" fill="#ffffff" fontSize="7" fontWeight="900" style={{ pointerEvents: 'none' }}>TRIP</text>
+                            </g>
+                          ) : comp.isOff ? (
+                            <g>
+                              <rect x={2} y={16} width={20} height={14} rx={2} fill="#475569" stroke="#94a3b8" strokeWidth={1} />
+                              <text x={12} y={26} textAnchor="middle" fill="#cbd5e1" fontSize="7" fontWeight="900" style={{ pointerEvents: 'none' }}>OFF</text>
+                            </g>
+                          ) : (
+                            <g>
+                              <rect x={2} y={2} width={20} height={14} rx={2} fill="#22c55e" stroke="#86efac" strokeWidth={1} />
+                              <text x={12} y={12} textAnchor="middle" fill="#052e16" fontSize="7" fontWeight="900" style={{ pointerEvents: 'none' }}>ON</text>
+                            </g>
+                          )}
+                        </g>
+                      )}
+
+                      {/* TRIPPED ALARM BADGE & PULSE */}
+                      {comp.isTripped && (
+                        <g 
+                          transform={`translate(${comp.w / 2}, -16)`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleToggleComponentSwitch(comp.id);
+                          }}
+                          className="cursor-pointer animate-bounce"
+                        >
+                          <rect x={-45} y={-10} width={90} height={20} rx={10} fill="#dc2626" stroke="#fecaca" strokeWidth={1.5} filter="url(#redGlow)" />
+                          <text x={0} y={3} textAnchor="middle" fill="#ffffff" fontSize="9" fontWeight="900">
+                            💥 DISPARADO
+                          </text>
+                        </g>
+                      )}
+
+                      {/* LOAD STATUS READOUT (WHEN POWERED IN ENERGIZED MODE) */}
+                      {comp.type === 'LOAD' && isEnergySimulated && (
+                        <g transform={`translate(${comp.w / 2}, 54)`}>
+                          {poweredLoadsMap[comp.id.replace('load_comp_', 'd1_l').replace('load_comp_', 'd2_l')]?.status === 'OPERATIONAL' ||
+                           Object.values(poweredLoadsMap).some(l => l.status === 'OPERATIONAL') ? (
+                            <g>
+                              <rect x={-36} y={-8} width={72} height={16} rx={4} fill="#052e16" stroke="#22c55e" strokeWidth={1} />
+                              <text x={0} y={3} textAnchor="middle" fill="#4ade80" fontSize="8" fontWeight="bold">
+                                220V • ACTIVO
+                              </text>
+                            </g>
+                          ) : (
+                            <g>
+                              <rect x={-36} y={-8} width={72} height={16} rx={4} fill="#1e1b4b" stroke="#6366f1" strokeWidth={1} />
+                              <text x={0} y={3} textAnchor="middle" fill="#a5b4fc" fontSize="8" fontWeight="bold">
+                                0V • INACTIVO
+                              </text>
+                            </g>
+                          )}
+                        </g>
                       )}
 
                       {/* NORMATIVE ERROR RED HIGHLIGHT & GLOW (COLLISION OR OUT OF DIN RAIL BOUNDS) */}
@@ -2098,8 +2691,8 @@ export default function InteractiveBoardTab() {
                         />
                       )}
 
-                      {/* ENERGIZED GLOW & STATUS LED WHEN SIMULATING ENERGY */}
-                      {isEnergySimulated && (
+                      {/* ENERGIZED GLOW & STATUS LED WHEN SIMULATING ENERGY (AND NOT TRIPPED) */}
+                      {isEnergySimulated && !comp.isTripped && !comp.isOff && (
                         <>
                           <rect
                             x={-2}
@@ -2139,7 +2732,7 @@ export default function InteractiveBoardTab() {
                       {/* Label */}
                       <text 
                         x={comp.w/2} 
-                        y={comp.type.startsWith('BAR') ? 20 : comp.type === 'GRID' ? 32 : 40} 
+                        y={comp.type.startsWith('BAR') ? 20 : comp.type === 'GRID' ? 32 : (comp.type === 'IGA' || comp.type === 'RCD' || comp.type === 'MCB') ? 24 : 40} 
                         textAnchor="middle" 
                         fill={validation.hasError ? "#fda4af" : "#f8fafc"} 
                         fontSize={comp.type.startsWith('BAR') ? 11 : 10} 
@@ -2257,11 +2850,207 @@ export default function InteractiveBoardTab() {
                     </g>
                   );
                 })}
+
+                {/* --- DYNAMIC ARC FLASH & SHORT CIRCUIT EXPLOSION VISUALS --- */}
+                {activeFault && (
+                  <g key={`fault_visual_${activeFault.id}`} transform={`translate(${activeFault.x}, ${activeFault.y})`}>
+                    {/* Shockwave circle */}
+                    <circle cx="0" cy="0" r="45" fill="none" stroke="#facc15" strokeWidth="3" opacity="0.8" className="animate-ping" />
+                    <circle cx="0" cy="0" r="28" fill="rgba(239, 68, 68, 0.45)" filter="url(#redGlow)" className="animate-pulse" />
+
+                    {/* Arc Flash Lightning Burst Paths */}
+                    <path
+                      d="M -15 -18 L -3 -2 L -18 8 L 4 6 L -6 22 L 14 0 L 2 -10 L 16 -18 Z"
+                      fill="#ffffff"
+                      stroke="#facc15"
+                      strokeWidth="2"
+                      className="arc-flash-burst"
+                    />
+
+                    {/* Exploding Spark Particles */}
+                    {sparkParticles.map(p => (
+                      <circle
+                        key={p.id}
+                        cx={p.x - activeFault.x}
+                        cy={p.y - activeFault.y}
+                        r={p.size}
+                        fill={p.color}
+                        style={{
+                          '--tx': `${p.tx}px`,
+                          '--ty': `${p.ty}px`,
+                        } as any}
+                        className="spark-particle-anim"
+                      />
+                    ))}
+
+                    {/* Smoke Cloud */}
+                    <g className="smoke-cloud-anim">
+                      <circle cx="-6" cy="-12" r="14" fill="#64748b" opacity="0.6" />
+                      <circle cx="8" cy="-16" r="18" fill="#475569" opacity="0.5" />
+                      <circle cx="0" cy="-22" r="12" fill="#334155" opacity="0.6" />
+                    </g>
+
+                    {/* Floating SVG Fault Label */}
+                    <g transform="translate(0, -38)">
+                      <rect x="-85" y="-12" width="170" height="24" rx="12" fill="#450a0a" stroke="#ef4444" strokeWidth="2" filter="url(#redGlow)" />
+                      <text x="0" y="4" textAnchor="middle" fill="#ffffff" fontSize="9.5" fontWeight="900">
+                        ⚡ {activeFault.title.toUpperCase()}
+                      </text>
+                    </g>
+                  </g>
+                )}
+
               </g>
             </svg>
+
+            {/* FLOATING REAL-TIME SHORT CIRCUIT DIAGNOSTIC HUD BANNER */}
+            {activeFault && (
+              <div className="absolute top-16 left-1/2 -translate-x-1/2 z-40 max-w-xl w-[92%] bg-slate-950/95 border-2 border-rose-500 rounded-2xl p-4 shadow-2xl backdrop-blur-md animate-fadeIn">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-3">
+                    <div className="p-2.5 bg-rose-600/30 text-rose-400 rounded-xl border border-rose-500/50 shrink-0 animate-bounce">
+                      <Flame className="w-6 h-6 text-yellow-300" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-mono font-black uppercase px-2 py-0.5 bg-rose-900/80 text-rose-200 rounded border border-rose-700">
+                          {activeFault.type.replace(/_/g, ' ')}
+                        </span>
+                        <span className="text-xs text-rose-400 font-bold">
+                          Icc ≈ {activeFault.iccAmps.toLocaleString('es-CL')} A • {activeFault.timeMs} ms
+                        </span>
+                      </div>
+                      <h4 className="text-sm font-black text-white mt-1">
+                        {activeFault.title}
+                      </h4>
+                      <p className="text-xs text-slate-300 mt-1 leading-relaxed">
+                        {activeFault.description}
+                      </p>
+                      <div className="text-[11px] text-amber-300 font-mono mt-1.5 flex items-center gap-1.5">
+                        <ShieldAlert className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                        <span>Referencia Normativa: <strong>{activeFault.normReference}</strong></span>
+                      </div>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => setActiveFault(null)}
+                    className="text-slate-400 hover:text-white p-1"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <div className="mt-3 pt-3 border-t border-slate-800 flex items-center justify-between gap-2 flex-wrap">
+                  <span className="text-[11px] text-slate-400">
+                    Dispositivo activado: <strong className="text-rose-400 font-mono">{activeFault.trippedCompName || 'IGA'}</strong> (Palanca abajo).
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setShowFaultDetailsModal(true)}
+                      className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-xl text-xs transition flex items-center gap-1.5"
+                    >
+                      <Info className="w-3.5 h-3.5 text-cyan-400" />
+                      <span>Ver Análisis Técnico</span>
+                    </button>
+                    <button
+                      onClick={handleRearmAllBreakers}
+                      className="px-3.5 py-1.5 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white font-bold rounded-xl text-xs shadow-md transition flex items-center gap-1.5"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5 text-white" />
+                      <span>Rearmar Protecciones</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
+
+      {/* DETAILED ELECTRICAL FAULT TECHNICAL ANALYSIS MODAL */}
+      {showFaultDetailsModal && activeFault && (
+        <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-slate-900 border-2 border-rose-500/80 rounded-2xl max-w-xl w-full p-6 shadow-2xl space-y-4 relative">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2.5 text-rose-400 font-bold">
+                <Flame className="w-6 h-6 text-yellow-300" />
+                <div>
+                  <span className="text-[10px] text-rose-300 uppercase tracking-widest font-mono block">Diagnóstico de Cortocircuito & Falla Eléctrica</span>
+                  <h3 className="text-base font-black text-white">{activeFault.title}</h3>
+                </div>
+              </div>
+              <button onClick={() => setShowFaultDetailsModal(false)} className="text-slate-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3.5 text-xs text-slate-300">
+              <div className="bg-slate-950 border border-slate-800 rounded-xl p-3.5 space-y-2">
+                <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Detalle del Evento Físico</div>
+                <p className="leading-relaxed text-slate-200">
+                  {activeFault.description}
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                <div className="bg-slate-950/80 border border-slate-800 p-2.5 rounded-xl">
+                  <div className="text-[10px] text-slate-400 uppercase font-semibold">Corriente Cortocircuito</div>
+                  <div className="text-sm font-black text-yellow-400 font-mono mt-0.5">
+                    {activeFault.iccAmps.toLocaleString('es-CL')} A
+                  </div>
+                </div>
+                <div className="bg-slate-950/80 border border-slate-800 p-2.5 rounded-xl">
+                  <div className="text-[10px] text-slate-400 uppercase font-semibold">Tiempo de Disparo</div>
+                  <div className="text-sm font-black text-emerald-400 font-mono mt-0.5">
+                    &lt; {activeFault.timeMs} ms
+                  </div>
+                </div>
+                <div className="bg-slate-950/80 border border-slate-800 p-2.5 rounded-xl col-span-2 sm:col-span-1">
+                  <div className="text-[10px] text-slate-400 uppercase font-semibold">Protección Actuada</div>
+                  <div className="text-sm font-black text-rose-400 font-mono mt-0.5">
+                    {activeFault.trippedCompName || 'IGA'}
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-rose-950/30 border border-rose-900/50 rounded-xl p-3.5 space-y-1.5">
+                <div className="font-bold text-rose-300 flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-rose-400" />
+                  <span>Pliego Técnico Normativo SEC Aplicable:</span>
+                </div>
+                <div className="font-mono text-slate-200 font-semibold">
+                  {activeFault.normReference}
+                </div>
+                <p className="text-slate-400 text-[11px] leading-relaxed pt-1">
+                  En conformidad con la normativa eléctrica de Chile, las protecciones magnéticas y diferenciales deben despejar fallas instantáneamente para evitar sobrecalentamiento de conductores, riesgos de incendio y electrocución.
+                </p>
+              </div>
+
+              <div className="pt-2 flex justify-between items-center gap-2">
+                <button
+                  onClick={() => {
+                    // Remove faulty wires if desired or close
+                    setShowFaultDetailsModal(false);
+                  }}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-xl text-xs transition"
+                >
+                  Cerrar Análisis
+                </button>
+                <button
+                  onClick={() => {
+                    setShowFaultDetailsModal(false);
+                    handleRearmAllBreakers();
+                  }}
+                  className="px-4 py-2 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white font-bold rounded-xl text-xs shadow-lg transition flex items-center gap-1.5"
+                >
+                  <RotateCcw className="w-3.5 h-3.5 text-white" />
+                  <span>Rearmar y Reintentar</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* FEASIBILITY WARNING MODAL (RIC NORMATIVE CHECK) */}
       {showFeasibilityModal && (

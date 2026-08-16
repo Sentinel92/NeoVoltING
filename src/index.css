@@ -46,6 +46,79 @@
   animation: energyComponentGlow 2s ease-in-out infinite;
 }
 
+@keyframes arcFlashAnimation {
+  0% {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  25% {
+    opacity: 1;
+    transform: scale(1.5);
+    filter: drop-shadow(0 0 25px #facc15) drop-shadow(0 0 45px #ef4444);
+  }
+  50% {
+    opacity: 0.85;
+    transform: scale(1.2);
+  }
+  75% {
+    opacity: 1;
+    transform: scale(1.6);
+    filter: drop-shadow(0 0 35px #ffffff) drop-shadow(0 0 50px #f59e0b);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+}
+
+.arc-flash-burst {
+  animation: arcFlashAnimation 0.5s ease-out infinite;
+}
+
+@keyframes sparkScatter {
+  0% {
+    transform: translate(0, 0) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(var(--tx, 20px), var(--ty, -30px)) scale(0);
+    opacity: 0;
+  }
+}
+
+.spark-particle-anim {
+  animation: sparkScatter 0.6s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+}
+
+@keyframes screenShake {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  15% { transform: translate(-6px, 4px) rotate(-0.5deg); }
+  30% { transform: translate(6px, -4px) rotate(0.5deg); }
+  45% { transform: translate(-4px, -3px) rotate(-0.3deg); }
+  60% { transform: translate(4px, 3px) rotate(0.3deg); }
+  75% { transform: translate(-2px, 1px) rotate(-0.1deg); }
+  90% { transform: translate(2px, -1px) rotate(0.1deg); }
+}
+
+.screen-shake-effect {
+  animation: screenShake 0.45s ease-in-out;
+}
+
+@keyframes smokeRise {
+  0% {
+    opacity: 0.8;
+    transform: translateY(0) scale(0.8);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-40px) scale(2.2);
+  }
+}
+
+.smoke-cloud-anim {
+  animation: smokeRise 1.2s ease-out forwards;
+}
+
 .markdown-body h1, .markdown-body h2, .markdown-body h3, .markdown-body h4 {
   color: #f8fafc;
   margin-top: 1.2em;

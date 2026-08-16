@@ -976,7 +976,7 @@ Redacta de forma clara, técnica, profesional y en español chileno normativo.`;
             <div className="space-y-2">
               {commonFaultTemplates.map((tpl, i) => (
                 <button
-                  key={i}
+                  key={`tpl-${i}-${tpl.title}`}
                   type="button"
                   onClick={() => handleSelectTemplate(tpl)}
                   className="w-full text-left bg-slate-950 hover:bg-slate-800/80 border border-slate-800 hover:border-fuchsia-500/50 p-3 rounded-2xl transition-all group space-y-1"
@@ -1037,7 +1037,7 @@ Redacta de forma clara, técnica, profesional y en español chileno normativo.`;
                     const isChecked = selectedMissingTools.includes(tool);
                     return (
                       <button
-                        key={idx}
+                        key={`missing-opt-${tool}-${idx}`}
                         type="button"
                         onClick={() => toggleMissingTool(tool)}
                         className={`text-[11px] px-2.5 py-1 rounded-xl font-medium transition-all flex items-center gap-1 border ${
@@ -1098,12 +1098,12 @@ Redacta de forma clara, técnica, profesional y en español chileno normativo.`;
                 </div>
               </div>
             ) : (
-              messages.map((msg) => {
+              messages.map((msg, msgIndex) => {
                 const referencedNorms = msg.role === 'model' && !msg.isError ? extractRicNormsFromText(msg.text) : [];
 
                 return (
                   <div
-                    key={msg.id}
+                    key={msg.id || `msg-${msgIndex}-${msg.timestamp}`}
                     className={`flex gap-3.5 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
                   >
                     {/* Bot Avatar for AI responses */}
@@ -1126,8 +1126,8 @@ Redacta de forma clara, técnica, profesional y en español chileno normativo.`;
                       {/* User Sent Images Thumbnails */}
                       {msg.images && msg.images.length > 0 && (
                         <div className="grid grid-cols-2 gap-2 pb-2 border-b border-fuchsia-800/40">
-                          {msg.images.map((img) => (
-                            <div key={img.id} className="rounded-xl overflow-hidden border border-fuchsia-700/50 bg-black/40">
+                          {msg.images.map((img, imgIdx) => (
+                            <div key={img.id || `msg-img-${msgIndex}-${imgIdx}`} className="rounded-xl overflow-hidden border border-fuchsia-700/50 bg-black/40">
                               <img src={img.dataUrl} alt={img.name} className="w-full h-24 object-cover" />
                             </div>
                           ))}
@@ -1151,9 +1151,9 @@ Redacta de forma clara, técnica, profesional y en español chileno normativo.`;
                             <span>Pliegos RIC Citados en este Diagnóstico:</span>
                           </div>
                           <div className="flex flex-wrap gap-1.5">
-                            {referencedNorms.map((norm) => (
+                            {referencedNorms.map((norm, normIdx) => (
                               <button
-                                key={norm.id}
+                                key={`ric-tag-${msg.id || msgIndex}-${norm.num}-${normIdx}`}
                                 type="button"
                                 onClick={() => setSelectedNormModal(norm)}
                                 className="flex items-center gap-1.5 bg-fuchsia-950/50 hover:bg-fuchsia-900/60 text-fuchsia-300 hover:text-white border border-fuchsia-700/50 hover:border-fuchsia-500 px-2.5 py-1 rounded-xl text-[10px] font-bold transition-all shadow-sm"
@@ -1173,7 +1173,7 @@ Redacta de forma clara, técnica, profesional y en español chileno normativo.`;
                         <div className="pt-2 border-t border-fuchsia-800/30 flex flex-wrap gap-1">
                           <span className="text-[10px] text-amber-300 font-bold">Sin instrumentos:</span>
                           {msg.missingTools.map((tool, idx) => (
-                            <span key={idx} className="text-[9px] bg-amber-500/20 text-amber-200 px-2 py-0.5 rounded-md font-mono">
+                            <span key={`msg-tool-${msg.id || msgIndex}-${tool}-${idx}`} className="text-[9px] bg-amber-500/20 text-amber-200 px-2 py-0.5 rounded-md font-mono">
                               {tool}
                             </span>
                           ))}
@@ -1273,8 +1273,8 @@ Redacta de forma clara, técnica, profesional y en español chileno normativo.`;
                 Fotos a enviar ({uploadedPhotos.length}/4):
               </span>
               <div className="flex items-center gap-2">
-                {uploadedPhotos.map((photo) => (
-                  <div key={photo.id} className="relative group shrink-0 rounded-lg overflow-hidden border border-slate-700 w-12 h-12">
+                {uploadedPhotos.map((photo, photoIdx) => (
+                  <div key={photo.id || `uploaded-photo-${photoIdx}`} className="relative group shrink-0 rounded-lg overflow-hidden border border-slate-700 w-12 h-12">
                     <img src={photo.dataUrl} alt={photo.name} className="w-full h-full object-cover" />
                     <button
                       type="button"
@@ -1415,7 +1415,7 @@ Redacta de forma clara, técnica, profesional y en español chileno normativo.`;
                   <h4 className="font-bold text-fuchsia-400 mb-1.5">Puntos Clave Exigidos por la SEC:</h4>
                   <ul className="space-y-1 bg-slate-950 p-3 rounded-xl border border-slate-800">
                     {selectedNormModal.keyPoints.map((pt, idx) => (
-                      <li key={idx} className="flex items-start gap-2 text-slate-300">
+                      <li key={`norm-kp-${selectedNormModal.num}-${idx}`} className="flex items-start gap-2 text-slate-300">
                         <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
                         <span>{pt}</span>
                       </li>
