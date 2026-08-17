@@ -432,10 +432,12 @@ export async function generatePdfBlob(
   }
 }
 
+import { getNeovoltLogoDataUrl } from '../components/NeovoltLogo';
+
 /**
- * Direct jsPDF vector generator with professional letterhead and autoTable
+ * Direct jsPDF vector generator with professional letterhead, authentic NEOVOLT branding, and autoTable
  */
-export function exportQuoteJsPdf(data: {
+export async function exportQuoteJsPdf(data: {
   items: Array<{ id: string; name: string; quantity: number; price: number; category: string; unit?: string; skuCode?: string }>;
   customer: { name: string; rut?: string; address?: string; city?: string; phone?: string; email?: string };
   contractor: {
@@ -446,53 +448,96 @@ export function exportQuoteJsPdf(data: {
     secClass?: string;
     phone?: string;
     email?: string;
+    customLogoUrl?: string;
     bankDetails?: { bankName: string; accountType: string; accountNumber: string; holderName: string; holderRut: string; emailForNotify: string };
   };
   laborCost: number;
   includeContingency15: boolean;
   clauses?: Array<{ id: string; title: string; content: string }>;
   signatureDataUrl?: string;
-}) {
+}): Promise<jsPDF> {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
-  // 1. Membrete Encabezado Profesional
-  doc.setFillColor(15, 23, 42); // slate-900
-  doc.rect(0, 0, 210, 28, 'F');
+  // 1. Fetch authentic Neovolt logo (or contractor's custom logo)
+  let logoData = data.contractor.customLogoUrl;
+  if (!logoData) {
+    logoData = await getNeovoltLogoDataUrl(false);
+  }
 
+  // 1. Membrete Encabezado Corporativo Oficial
+  const headerHeight = 32;
+  doc.setFillColor(11, 15, 25); // Deep corporate black #0B0F19
+  doc.rect(0, 0, 210, headerHeight, 'F');
+
+  // Cyan Accent Line (#00E5FF)
+  doc.setFillColor(0, 229, 255);
+  doc.rect(0, 0, 210, 2.5, 'F');
+
+  // Magenta Accent Tag (#E83D84)
+  doc.setFillColor(232, 61, 132);
+  doc.rect(0, 2.5, 4, headerHeight - 2.5, 'F');
+
+  let textLeft = 14;
+
+  if (logoData) {
+    try {
+      doc.addImage(logoData, 'PNG', 12, 5.5, 48, 22);
+      textLeft = 65;
+    } catch {
+      textLeft = 14;
+    }
+  }
+
+  // Company Details inside Header
   doc.setTextColor(255, 255, 255);
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(15);
-  doc.text(data.contractor.companyName || 'NEOVOLT SEC - PROYECTOS ELÉCTRICOS', 14, 12);
+  doc.setFontSize(13);
+  doc.text(data.contractor.companyName || 'NEOVOLT - PROYECTOS ELÉCTRICOS', textLeft, 12);
 
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8.5);
-  doc.text(`RUT: ${data.contractor.rut || '77.892.100-K'} | Instalador SEC: ${data.contractor.installerName} (${data.contractor.secLicense || 'Lic. SEC 182940'})`, 14, 18);
-  doc.text(`Email: ${data.contractor.email || 'contacto@neovolt.cl'} | Fono: ${data.contractor.phone || '+56 9 8765 4321'}`, 14, 23);
+  doc.setFontSize(8);
+  doc.setTextColor(203, 213, 225); // slate-300
+  doc.text(`RUT: ${data.contractor.rut || '77.892.100-K'} | Instalador: ${data.contractor.installerName} (${data.contractor.secLicense ? `SEC ${data.contractor.secLicense}` : 'Certificado SEC'})`, textLeft, 18);
+  doc.text(`Email: ${data.contractor.email || 'contacto@neovolt.cl'} | Fono: ${data.contractor.phone || '+56 9 8765 4321'}`, textLeft, 23);
 
-  // Fecha y Folio Cotización
+  // Folio & Quote Badge (Right Side)
   const today = new Date().toLocaleDateString('es-CL');
+  const folioNum = `COT-${Date.now().toString().slice(-6)}`;
+
+  doc.setFillColor(22, 30, 49); // slate-800
+  doc.roundedRect(144, 5, 52, 23, 1.5, 1.5, 'F');
+
   doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7.5);
+  doc.setTextColor(0, 229, 255); // Cyan
+  doc.text('PRESUPUESTO OFICIAL', 170, 10, { align: 'center' });
+
   doc.setFontSize(11);
-  doc.text('COTIZACIÓN OFICIAL', 145, 12);
-  doc.setFontSize(8.5);
-  doc.setFont('helvetica', 'normal');
-  doc.text(`Fecha: ${today}`, 145, 18);
-  doc.text(`Válido por 30 días corridos`, 145, 23);
+  doc.setTextColor(255, 255, 255);
+  doc.text(folioNum, 170, 16.5, { align: 'center' });
 
-  // 2. Datos del Cliente & Obra
+  doc.setFontSize(7.5);
+  doc.setTextColor(148, 163, 184); // slate-400
+  doc.setFont('helvetica', 'normal');
+  doc.text(`Emisión: ${today}`, 170, 22, { align: 'center' });
+
+  // 2. Datos del Cliente & Ubicación de Obra
   doc.setTextColor(15, 23, 42);
-  doc.setFillColor(241, 245, 249); // slate-100
-  doc.rect(14, 34, 182, 20, 'F');
+  doc.setFillColor(248, 250, 252); // slate-50
+  doc.setDrawColor(203, 213, 225); // slate-300
+  doc.rect(14, 38, 182, 21, 'FD');
 
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9.5);
-  doc.text('DATOS DEL CLIENTE Y UBICACIÓN DE OBRA:', 18, 40);
+  doc.setFontSize(9);
+  doc.setTextColor(15, 23, 42);
+  doc.text('DATOS DEL CLIENTE Y UBICACIÓN DE OBRA:', 18, 44);
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8.5);
-  doc.text(`Cliente: ${data.customer.name || 'Sin Especificar'} (RUT: ${data.customer.rut || 'N/A'})`, 18, 46);
-  doc.text(`Dirección: ${data.customer.address || 'Chile'} - ${data.customer.city || ''}`, 18, 50);
-  doc.text(`Contacto: ${data.customer.phone || 'N/A'} | Email: ${data.customer.email || 'N/A'}`, 110, 46);
+  doc.setTextColor(51, 65, 85);
+  doc.text(`Cliente: ${data.customer.name || 'Cliente Particular'} (RUT: ${data.customer.rut || 'N/A'})`, 18, 50);
+  doc.text(`Dirección: ${data.customer.address || 'Chile'} - ${data.customer.city || ''}`, 18, 55);
+  doc.text(`Contacto: ${data.customer.phone || 'N/A'} | Email: ${data.customer.email || 'N/A'}`, 110, 50);
 
   // 3. Tabla de Materiales e Insumos (autoTable)
   const tableData = data.items.map((item, idx) => [
@@ -507,19 +552,20 @@ export function exportQuoteJsPdf(data: {
   const rawMaterialsTotal = data.items.reduce((s, i) => s + i.quantity * i.price, 0);
 
   autoTable(doc, {
-    startY: 58,
+    startY: 64,
     head: [['#', 'Descripción de Materiales e Insumos', 'Categoría', 'Cant.', 'Unit. CLP', 'Subtotal CLP']],
     body: tableData,
     theme: 'striped',
     headStyles: {
-      fillColor: [15, 23, 42],
+      fillColor: [11, 15, 25],
       textColor: [255, 255, 255],
       fontStyle: 'bold',
       fontSize: 8.5,
     },
     styles: {
       fontSize: 8,
-      cellPadding: 2,
+      cellPadding: 2.2,
+      textColor: [15, 23, 42],
     },
     columnStyles: {
       0: { cellWidth: 10, halign: 'center' },
@@ -534,7 +580,7 @@ export function exportQuoteJsPdf(data: {
   // Get final Y after autoTable
   let finalY = (doc as any).lastAutoTable ? (doc as any).lastAutoTable.finalY + 6 : 100;
 
-  if (finalY > 230) {
+  if (finalY > 220) {
     doc.addPage();
     finalY = 20;
   }
@@ -545,49 +591,51 @@ export function exportQuoteJsPdf(data: {
   const totalFinalCLP = baseSubtotal + contingencyVal;
 
   doc.setFillColor(248, 250, 252);
-  doc.setDrawColor(226, 232, 240);
-  doc.rect(110, finalY, 86, 36, 'FD');
+  doc.setDrawColor(203, 213, 225);
+  doc.rect(110, finalY, 86, 38, 'FD');
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8.5);
   doc.setTextColor(51, 65, 85);
 
-  doc.text(`Total Materiales:`, 114, finalY + 6);
+  doc.text(`Total Materiales e Insumos:`, 114, finalY + 6);
   doc.text(`$${rawMaterialsTotal.toLocaleString('es-CL')} CLP`, 190, finalY + 6, { align: 'right' });
 
-  doc.text(`Mano de Obra SEC:`, 114, finalY + 12);
+  doc.text(`Mano de Obra Especializada SEC:`, 114, finalY + 12);
   doc.text(`$${data.laborCost.toLocaleString('es-CL')} CLP`, 190, finalY + 12, { align: 'right' });
 
   if (data.includeContingency15) {
-    doc.text(`Imprevistos Obra (15%):`, 114, finalY + 18);
+    doc.text(`Imprevistos de Obra (15%):`, 114, finalY + 18);
     doc.text(`$${contingencyVal.toLocaleString('es-CL')} CLP`, 190, finalY + 18, { align: 'right' });
   }
 
   doc.setLineWidth(0.4);
-  doc.setDrawColor(15, 23, 42);
-  doc.line(114, finalY + 22, 190, finalY + 22);
+  doc.setDrawColor(11, 15, 25);
+  doc.line(114, finalY + 23, 190, finalY + 23);
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10.5);
-  doc.setTextColor(15, 23, 42);
-  doc.text(`TOTAL FINAL:`, 114, finalY + 29);
-  doc.text(`$${totalFinalCLP.toLocaleString('es-CL')} CLP`, 190, finalY + 29, { align: 'right' });
+  doc.setTextColor(11, 15, 25);
+  doc.text(`TOTAL FINAL:`, 114, finalY + 31);
+  doc.text(`$${totalFinalCLP.toLocaleString('es-CL')} CLP`, 190, finalY + 31, { align: 'right' });
 
   // Datos Bancarios (Lado izquierdo)
   if (data.contractor.bankDetails) {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8.5);
+    doc.setTextColor(11, 15, 25);
     doc.text('DATOS PARA TRANSFERENCIA BANCARIA:', 14, finalY + 6);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
-    doc.text(`Banco: ${data.contractor.bankDetails.bankName}`, 14, finalY + 11);
-    doc.text(`Tipo Cuenta: ${data.contractor.bankDetails.accountType} N° ${data.contractor.bankDetails.accountNumber}`, 14, finalY + 16);
-    doc.text(`Titular: ${data.contractor.bankDetails.holderName} (RUT: ${data.contractor.bankDetails.holderRut})`, 14, finalY + 21);
-    doc.text(`Email Comprobante: ${data.contractor.bankDetails.emailForNotify}`, 14, finalY + 26);
+    doc.setTextColor(51, 65, 85);
+    doc.text(`Banco: ${data.contractor.bankDetails.bankName}`, 14, finalY + 12);
+    doc.text(`Tipo Cuenta: ${data.contractor.bankDetails.accountType} N° ${data.contractor.bankDetails.accountNumber}`, 14, finalY + 17);
+    doc.text(`Titular: ${data.contractor.bankDetails.holderName} (RUT: ${data.contractor.bankDetails.holderRut})`, 14, finalY + 22);
+    doc.text(`Email Comprobante: ${data.contractor.bankDetails.emailForNotify}`, 14, finalY + 27);
   }
 
   // 5. Cláusulas del Contrato
-  let clauseY = finalY + 42;
+  let clauseY = finalY + 44;
   if (data.clauses && data.clauses.length > 0) {
     if (clauseY > 210) {
       doc.addPage();
@@ -596,7 +644,7 @@ export function exportQuoteJsPdf(data: {
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
-    doc.setTextColor(15, 23, 42);
+    doc.setTextColor(11, 15, 25);
     doc.text('CONDICIONES Y CLÁUSULAS CONTRACTUALES RIC SEC:', 14, clauseY);
     clauseY += 5;
 
@@ -607,11 +655,13 @@ export function exportQuoteJsPdf(data: {
       }
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(8);
+      doc.setTextColor(11, 15, 25);
       doc.text(c.title, 14, clauseY);
       clauseY += 4;
 
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(7.5);
+      doc.setTextColor(71, 85, 105);
       const splitText = doc.splitTextToSize(c.content, 182);
       doc.text(splitText, 14, clauseY);
       clauseY += splitText.length * 3.5 + 2;
@@ -627,10 +677,12 @@ export function exportQuoteJsPdf(data: {
     try {
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(8.5);
+      doc.setTextColor(11, 15, 25);
       doc.text('FIRMA DE ACEPTACIÓN DEL CLIENTE:', 14, clauseY + 4);
       doc.addImage(data.signatureDataUrl, 'PNG', 14, clauseY + 6, 45, 18);
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(7.5);
+      doc.setTextColor(100, 116, 139);
       doc.text(`Firmado digitalmente por: ${data.customer.name}`, 14, clauseY + 27);
     } catch (e) {
       console.warn('No se pudo insertar la firma en PDF:', e);
@@ -641,3 +693,4 @@ export function exportQuoteJsPdf(data: {
   doc.save(`Cotizacion_Oficial_${clientSlug}.pdf`);
   return doc;
 }
+

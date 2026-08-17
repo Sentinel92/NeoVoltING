@@ -165,7 +165,7 @@ export const CotizadorTab: React.FC<CotizadorTabProps> = ({
   const handleDownloadPdf = async () => {
     setIsGeneratingPdf(true);
     try {
-      exportQuoteJsPdf({
+      await exportQuoteJsPdf({
         items,
         customer,
         contractor,
@@ -178,7 +178,7 @@ export const CotizadorTab: React.FC<CotizadorTabProps> = ({
       console.warn('Fallback a renderizado DOM para PDF:', err);
       const clientSlug = (customer.name || 'Cliente').replace(/[^a-zA-Z0-9]/g, '_');
       await downloadPdfFromElement(quoteDocRef.current, {
-        filename: `Cotizacion_Presupuesto_${clientSlug}.pdf`,
+        filename: `Cotizacion_Oficial_${clientSlug}.pdf`,
         margin: 10,
         orientation: 'portrait',
       });
@@ -195,9 +195,24 @@ export const CotizadorTab: React.FC<CotizadorTabProps> = ({
     setIsGeneratingPdf(true);
     try {
       const clientSlug = (customer.name || 'Cliente').replace(/[^a-zA-Z0-9]/g, '_');
-      const filename = `Cotizacion_Presupuesto_${clientSlug}.pdf`;
+      const filename = `Cotizacion_Oficial_${clientSlug}.pdf`;
 
-      // Generate PDF Blob
+      // 1. Export vector PDF with authentic branding
+      try {
+        await exportQuoteJsPdf({
+          items,
+          customer,
+          contractor,
+          laborCost,
+          includeContingency15,
+          clauses,
+          signatureDataUrl: clientSignature.signatureDataUrl,
+        });
+      } catch (e) {
+        console.warn('Fallback generating blob', e);
+      }
+
+      // Generate PDF Blob for WebShare if supported
       const pdfBlob = await generatePdfBlob(quoteDocRef.current, {
         filename,
         margin: 10,
@@ -211,7 +226,7 @@ export const CotizadorTab: React.FC<CotizadorTabProps> = ({
           try {
             await navigator.share({
               title: `Cotización Eléctrica SEC - ${contractor.companyName}`,
-              text: `Hola ${customer.name}, te adjunto la cotización formal de trabajos eléctricos de ${contractor.companyName}.`,
+              text: `Hola ${customer.name || 'Estimado/a'}, te adjunto la cotización formal de trabajos eléctricos en PDF de ${contractor.companyName}.`,
               files: [file],
             });
             return;
@@ -219,14 +234,6 @@ export const CotizadorTab: React.FC<CotizadorTabProps> = ({
             console.log('Navegador canceló WebShare, usando descarga directa.');
           }
         }
-
-        // Automatic Download Fallback
-        const url = URL.createObjectURL(pdfBlob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        a.click();
-        URL.revokeObjectURL(url);
       }
 
       // Clean customer phone number
@@ -244,11 +251,11 @@ export const CotizadorTab: React.FC<CotizadorTabProps> = ({
 📍 *RESUMEN DE COTIZACIÓN COMERCIAL:*
 • Materiales e Insumos Eléctricos: $${effectiveMaterialsTotal.toLocaleString('es-CL')} CLP
 • Mano de Obra Ejecución Especializada SEC: $${laborCost.toLocaleString('es-CL')} CLP
-${includeContingency15 ? `• Imprevistos / Contingencias de Obra (15%): Incluido\n` : ''}-----------------------------------
+${includeContingency15 ? `• Margen Imprevistos / Contingencias de Obra (15%): Incluido\n` : ''}-----------------------------------
 💰 *PRECIO TOTAL FINAL:* $${totalFinalCLP.toLocaleString('es-CL')} CLP
 
-📎 *DOCUMENTO PDF OFICIAL:*
-Se ha adjuntado/generado el PDF oficial: *${filename}*.
+📄 *DOCUMENTO PDF OFICIAL:*
+Se ha generado y descargado el archivo PDF: *${filename}*.
 
 💳 *DATOS PARA TRANSFERENCIA BANCARIA:*
 • Banco: ${contractor.bankDetails.bankName}
@@ -279,9 +286,24 @@ Atentamente,
     setIsGeneratingPdf(true);
     try {
       const clientSlug = (customer.name || 'Cliente').replace(/[^a-zA-Z0-9]/g, '_');
-      const filename = `Cotizacion_Presupuesto_${clientSlug}.pdf`;
+      const filename = `Cotizacion_Oficial_${clientSlug}.pdf`;
 
-      // Generate PDF Blob
+      // 1. Export vector PDF with authentic branding
+      try {
+        await exportQuoteJsPdf({
+          items,
+          customer,
+          contractor,
+          laborCost,
+          includeContingency15,
+          clauses,
+          signatureDataUrl: clientSignature.signatureDataUrl,
+        });
+      } catch (e) {
+        console.warn('Fallback generating blob', e);
+      }
+
+      // Generate PDF Blob for WebShare if supported
       const pdfBlob = await generatePdfBlob(quoteDocRef.current, {
         filename,
         margin: 10,
@@ -294,7 +316,7 @@ Atentamente,
           try {
             await navigator.share({
               title: `Cotización & Contrato Trabajos Eléctricos SEC - ${contractor.companyName}`,
-              text: `Estimado/a ${customer.name},\n\nJunto con saludar, adjuntamos la propuesta comercial y contractual en PDF.`,
+              text: `Estimado/a ${customer.name || 'Cliente'},\n\nJunto con saludar, adjuntamos la propuesta comercial y contractual en PDF.`,
               files: [file],
             });
             return;
@@ -302,14 +324,6 @@ Atentamente,
             console.log('WebShare cancelado, usando fallback mailto.');
           }
         }
-
-        // Automatic Download Fallback
-        const url = URL.createObjectURL(pdfBlob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        a.click();
-        URL.revokeObjectURL(url);
       }
 
       const subject = encodeURIComponent(`Cotización & Contrato Trabajos Eléctricos SEC - ${contractor.companyName}`);

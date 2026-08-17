@@ -35,6 +35,42 @@ export const InstallerProfileTab: React.FC<InstallerProfileTabProps> = ({
 }) => {
   const [savedSuccess, setSavedSuccess] = useState(false);
 
+  const syncToLocalStorageAndNotify = (updatedContractor: ContractorConfig, newAvatar?: string, newLogo?: string) => {
+    try {
+      if (newLogo !== undefined) {
+        if (newLogo) localStorage.setItem('user_logo_url', newLogo);
+        else localStorage.removeItem('user_logo_url');
+      } else if (updatedContractor.customLogoUrl) {
+        localStorage.setItem('user_logo_url', updatedContractor.customLogoUrl);
+      }
+
+      if (newAvatar !== undefined) {
+        if (newAvatar) localStorage.setItem('user_avatar_url', newAvatar);
+        else localStorage.removeItem('user_avatar_url');
+      } else if (updatedContractor.customAvatarUrl) {
+        localStorage.setItem('user_avatar_url', updatedContractor.customAvatarUrl);
+      }
+
+      const profileData = {
+        name: updatedContractor.installerName || 'Camilo Rojas',
+        installerName: updatedContractor.installerName || 'Camilo Rojas',
+        email: updatedContractor.senderEmail || 'ineovolt@gmail.com',
+        companyName: updatedContractor.companyName || 'NEOVOLT SpA',
+        secLicense: updatedContractor.secLicense || 'SEC-84291-CL',
+        secClass: updatedContractor.secClass || 'Clase A',
+        logoUrl: updatedContractor.customLogoUrl || (newLogo !== undefined ? newLogo : ''),
+        avatarUrl: updatedContractor.customAvatarUrl || (newAvatar !== undefined ? newAvatar : ''),
+        title: updatedContractor.customProfessionalTitle || 'Ingeniero en Electricidad',
+      };
+      localStorage.setItem('profile_data', JSON.stringify(profileData));
+      localStorage.setItem('neovolt_contractor', JSON.stringify(updatedContractor));
+
+      window.dispatchEvent(new CustomEvent('neovolt_profile_updated', { detail: profileData }));
+    } catch (err) {
+      console.warn('Could not sync profile to localStorage', err);
+    }
+  };
+
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -42,13 +78,17 @@ export const InstallerProfileTab: React.FC<InstallerProfileTabProps> = ({
     const reader = new FileReader();
     reader.onload = (event) => {
       const dataUrl = event.target?.result as string;
-      setContractor({ ...contractor, customLogoUrl: dataUrl });
+      const updated = { ...contractor, customLogoUrl: dataUrl };
+      setContractor(updated);
+      syncToLocalStorageAndNotify(updated, undefined, dataUrl);
     };
     reader.readAsDataURL(file);
   };
 
   const handleResetLogo = () => {
-    setContractor({ ...contractor, customLogoUrl: undefined });
+    const updated = { ...contractor, customLogoUrl: undefined };
+    setContractor(updated);
+    syncToLocalStorageAndNotify(updated, undefined, '');
   };
 
   const handleBannerUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -58,13 +98,17 @@ export const InstallerProfileTab: React.FC<InstallerProfileTabProps> = ({
     const reader = new FileReader();
     reader.onload = (event) => {
       const dataUrl = event.target?.result as string;
-      setContractor({ ...contractor, customBannerUrl: dataUrl });
+      const updated = { ...contractor, customBannerUrl: dataUrl };
+      setContractor(updated);
+      syncToLocalStorageAndNotify(updated);
     };
     reader.readAsDataURL(file);
   };
 
   const handleResetBanner = () => {
-    setContractor({ ...contractor, customBannerUrl: undefined });
+    const updated = { ...contractor, customBannerUrl: undefined };
+    setContractor(updated);
+    syncToLocalStorageAndNotify(updated);
   };
 
   const handleAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -74,21 +118,26 @@ export const InstallerProfileTab: React.FC<InstallerProfileTabProps> = ({
     const reader = new FileReader();
     reader.onload = (event) => {
       const dataUrl = event.target?.result as string;
-      setContractor({ ...contractor, customAvatarUrl: dataUrl });
+      const updated = { ...contractor, customAvatarUrl: dataUrl };
+      setContractor(updated);
       if (setUser) {
         setUser((prev) => ({ ...prev, googleAvatarUrl: dataUrl }));
       }
+      syncToLocalStorageAndNotify(updated, dataUrl, undefined);
     };
     reader.readAsDataURL(file);
   };
 
   const handleSaveSignature = (sigUrl: string) => {
-    setContractor({ ...contractor, installerSignatureUrl: sigUrl });
+    const updated = { ...contractor, installerSignatureUrl: sigUrl };
+    setContractor(updated);
+    syncToLocalStorageAndNotify(updated);
   };
 
   const handleSaveAll = (e: React.FormEvent) => {
     e.preventDefault();
     setSavedSuccess(true);
+    syncToLocalStorageAndNotify(contractor);
     if (onSaveToCloud) {
       onSaveToCloud();
     }

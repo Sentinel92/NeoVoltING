@@ -1,7 +1,12 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { UserSession } from '../types';
 import { NeovoltLogo } from './NeovoltLogo';
-import { Zap, ShieldCheck, User, LogIn, LogOut, CheckCircle2, FileSpreadsheet, Users, UserCheck, Wrench, Cpu, Cloud, CloudUpload, Smartphone, RefreshCw, FolderPlus, Wifi, WifiOff, Database, BarChart3, Menu } from 'lucide-react';
+import { 
+  Zap, ShieldCheck, User, LogIn, LogOut, CheckCircle2, FileSpreadsheet, 
+  Users, UserCheck, Wrench, Cpu, Cloud, CloudUpload, Smartphone, 
+  RefreshCw, FolderPlus, Wifi, WifiOff, Database, BarChart3, Menu,
+  Award, Building2
+} from 'lucide-react';
 
 interface HeaderNavbarProps {
   user: UserSession;
@@ -40,26 +45,93 @@ export const HeaderNavbar: React.FC<HeaderNavbarProps> = ({
   pendingQueueCount = 0,
   onSyncNow,
 }) => {
-  const tabs = [
-    { id: 'dashboard', label: '📊 Dashboard KPI', icon: BarChart3, badge: 'KPIs' },
-    { id: 'projects', label: '0. Proyectos & Solicitudes', icon: FolderPlus, badge: 'Nuevo' },
-    { id: 'tools', label: '🧰 Herramientas SEC / RIC', icon: Wrench, badge: 'NUEVO' },
-    { id: 'census', label: '1. Levantamiento', icon: Zap },
-    { id: 'crm', label: '2. Clientes (CRM)', icon: Users },
-    { id: 'profile', label: '3. Perfil Técnico', icon: UserCheck },
-    { id: 'diagnostic', label: '4. Consultor IA Fallas', icon: Cpu, badge: 'IA Gemini' },
-    { id: 'assembler', label: '5. Armado Tablero', icon: ShieldCheck },
-    { id: 'singleline', label: '6. Unilineal', icon: FileSpreadsheet },
-    { id: 'physical', label: '7. Tablero 2D', icon: Zap },
-    { id: 'quote', label: '8. Cotización & Contrato', icon: CheckCircle2 },
-    { id: 'report', label: '9. Informe Obra AI', icon: CheckCircle2 },
-    { id: 'catalog', label: '10. Catálogo', icon: CheckCircle2 },
-    { id: 'norms', label: '11. Norma RIC SEC', icon: ShieldCheck },
-    { id: 'te1', label: '12. Declaración TE1 SEC', icon: FileSpreadsheet, badge: 'Oficial' },
-  ];
+  // Dynamic images and profile data from localStorage
+  const [logoUrl, setLogoUrl] = useState<string>('');
+  const [avatarUrl, setAvatarUrl] = useState<string>('');
+  const [logoError, setLogoError] = useState<boolean>(false);
+  const [avatarError, setAvatarError] = useState<boolean>(false);
+  const [dynamicProfile, setDynamicProfile] = useState<{
+    name?: string;
+    email?: string;
+    companyName?: string;
+    secLicense?: string;
+    secClass?: string;
+    title?: string;
+  }>({});
+
+  const syncProfileFromStorage = () => {
+    try {
+      const storedLogo = localStorage.getItem('user_logo_url');
+      const storedAvatar = localStorage.getItem('user_avatar_url');
+
+      let parsedProfile: any = {};
+      const rawProfile = localStorage.getItem('profile_data');
+      if (rawProfile) {
+        try { parsedProfile = JSON.parse(rawProfile); } catch {}
+      }
+
+      let parsedContractor: any = {};
+      const rawContractor = localStorage.getItem('neovolt_contractor');
+      if (rawContractor) {
+        try { parsedContractor = JSON.parse(rawContractor); } catch {}
+      }
+
+      const resolvedLogo = storedLogo || parsedProfile.logoUrl || parsedProfile.customLogoUrl || parsedContractor.customLogoUrl || customLogoUrl || '';
+      const resolvedAvatar = storedAvatar || parsedProfile.avatarUrl || parsedProfile.customAvatarUrl || parsedContractor.customAvatarUrl || user?.googleAvatarUrl || '';
+
+      setLogoUrl(resolvedLogo);
+      setLogoError(false);
+
+      setAvatarUrl(resolvedAvatar);
+      setAvatarError(false);
+
+      setDynamicProfile({
+        name: parsedProfile.name || parsedProfile.installerName || parsedContractor.installerName || user?.name || 'Ing. Camilo Rojas',
+        email: parsedProfile.email || parsedContractor.senderEmail || user?.email || 'ineovolt@gmail.com',
+        companyName: parsedProfile.companyName || parsedContractor.companyName || 'NEOVOLT SpA',
+        secLicense: parsedProfile.secLicense || parsedContractor.secLicense || user?.secNumber || 'SEC-84291-CL',
+        secClass: parsedProfile.secClass || parsedContractor.secClass || 'Clase A',
+        title: parsedProfile.title || parsedContractor.customProfessionalTitle || 'Ingeniero en Electricidad',
+      });
+    } catch (e) {
+      console.warn('Error reading dynamic header profile:', e);
+    }
+  };
+
+  useEffect(() => {
+    syncProfileFromStorage();
+
+    const handleProfileUpdated = () => {
+      syncProfileFromStorage();
+    };
+
+    const handleStorageEvent = (e: StorageEvent) => {
+      if (
+        !e.key || 
+        e.key === 'user_logo_url' || 
+        e.key === 'user_avatar_url' || 
+        e.key === 'profile_data' ||
+        e.key === 'neovolt_contractor'
+      ) {
+        syncProfileFromStorage();
+      }
+    };
+
+    window.addEventListener('neovolt_profile_updated', handleProfileUpdated);
+    window.addEventListener('profile_updated', handleProfileUpdated);
+    window.addEventListener('storage', handleStorageEvent);
+    window.addEventListener('focus', handleProfileUpdated);
+
+    return () => {
+      window.removeEventListener('neovolt_profile_updated', handleProfileUpdated);
+      window.removeEventListener('profile_updated', handleProfileUpdated);
+      window.removeEventListener('storage', handleStorageEvent);
+      window.removeEventListener('focus', handleProfileUpdated);
+    };
+  }, [customLogoUrl, user]);
 
   return (
-    <header className="print:hidden bg-slate-900 border-b border-slate-800 sticky top-0 z-40">
+    <header className="print:hidden bg-slate-900/95 backdrop-blur-md border-b border-slate-800 sticky top-0 z-40">
       <div className="max-w-7xl mx-auto px-4 sm:px-6">
         <div className="flex items-center justify-between h-16 gap-2">
           {/* Brand Logo & Hamburger */}
@@ -73,8 +145,28 @@ export const HeaderNavbar: React.FC<HeaderNavbarProps> = ({
                 <Menu className="w-6 h-6" />
               </button>
             )}
-            <div className="cursor-pointer shrink-0" onClick={() => setActiveTab('census')}>
-              <NeovoltLogo customLogoUrl={customLogoUrl} variant="dark" />
+            
+            {/* Dynamic Brand Logo with Fallback */}
+            <div 
+              className="cursor-pointer shrink-0 flex items-center gap-2" 
+              onClick={() => setActiveTab('census')}
+              title="Ir a Levantamiento"
+            >
+              {logoUrl && !logoError ? (
+                <div className="flex items-center gap-2.5">
+                  <img
+                    src={logoUrl}
+                    alt="Logo Empresa"
+                    className="h-9 max-w-[180px] object-contain rounded filter drop-shadow"
+                    onError={() => setLogoError(true)}
+                  />
+                  <span className="hidden xl:inline-block text-[11px] font-bold text-slate-400 border-l border-slate-700 pl-2.5">
+                    {dynamicProfile.companyName || 'NEOVOLT'}
+                  </span>
+                </div>
+              ) : (
+                <NeovoltLogo customLogoUrl={customLogoUrl} variant="dark" />
+              )}
             </div>
           </div>
 
@@ -152,24 +244,40 @@ export const HeaderNavbar: React.FC<HeaderNavbarProps> = ({
             {user.isLoggedIn ? (
               <div
                 onClick={() => setActiveTab('profile')}
-                className="cursor-pointer flex items-center gap-2.5 bg-slate-800/80 hover:bg-slate-800 border border-slate-700/60 rounded-xl px-3 py-1.5 transition-all"
+                className="cursor-pointer flex items-center gap-2.5 bg-slate-800/80 hover:bg-slate-800 border border-slate-700/60 rounded-xl px-3 py-1.5 transition-all group"
               >
-                <div className="w-7 h-7 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center border border-emerald-500/30 shrink-0">
-                  <User className="w-4 h-4" />
+                {/* Dynamic User Avatar with Lucide Fallback */}
+                <div className="relative shrink-0">
+                  {avatarUrl && !avatarError ? (
+                    <img 
+                      src={avatarUrl}
+                      alt={dynamicProfile.name || user.name || "Avatar"}
+                      className="w-7 h-7 rounded-full object-cover border border-emerald-500/50 shadow-sm"
+                      onError={() => setAvatarError(true)}
+                    />
+                  ) : (
+                    <div className="w-7 h-7 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center border border-emerald-500/30 shrink-0">
+                      <User className="w-4 h-4" />
+                    </div>
+                  )}
+                  <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 bg-emerald-500 border border-slate-900 rounded-full" />
                 </div>
+
                 <div className="hidden sm:block text-left">
                   <div className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
-                    <span>{user.name}</span>
-                    <span className="bg-fuchsia-500/20 text-fuchsia-300 text-[9px] px-1.5 py-0.5 rounded border border-fuchsia-500/30 font-bold">
-                      Perfil Ingeniero
+                    <span>{dynamicProfile.name || user.name}</span>
+                    <span className="bg-cyan-950/80 text-cyan-300 text-[9px] px-1.5 py-0.5 rounded border border-cyan-500/30 font-bold flex items-center gap-1">
+                      <Award className="w-2.5 h-2.5 text-cyan-400" />
+                      {dynamicProfile.secLicense || 'SEC'}
                     </span>
                   </div>
                   <div className="text-[10px] text-slate-400 flex items-center gap-1">
-                    <span className="truncate max-w-[150px]">{user.email}</span>
+                    <span className="truncate max-w-[140px]">{dynamicProfile.email || user.email}</span>
                     <span>|</span>
-                    <span className="text-emerald-400 font-semibold">Ingeniero Eléctrico</span>
+                    <span className="text-emerald-400 font-semibold">{dynamicProfile.title || 'Ingeniero Eléctrico'}</span>
                   </div>
                 </div>
+                
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
@@ -184,7 +292,7 @@ export const HeaderNavbar: React.FC<HeaderNavbarProps> = ({
             ) : (
               <button
                 onClick={onOpenLogin}
-                className="flex items-center gap-2 bg-gradient-to-r from-fuchsia-600 to-indigo-600 hover:from-fuchsia-500 hover:to-indigo-500 text-white text-xs font-bold px-3.5 py-2 rounded-xl shadow-md transition-all active:scale-95"
+                className="flex items-center gap-2 bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white text-xs font-bold px-3.5 py-2 rounded-xl shadow-md transition-all active:scale-95"
               >
                 <LogIn className="w-4 h-4" />
                 <span>Iniciar Sesión</span>

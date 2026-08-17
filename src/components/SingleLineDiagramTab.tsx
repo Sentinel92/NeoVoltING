@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { RoomData, HighAppliance, CustomProtectionSpecs, ContractorConfig, CustomerDetails } from '../types';
 import {
   FileText,
@@ -63,6 +63,8 @@ import {
   Cell,
 } from 'recharts';
 import { downloadPdfFromElement } from '../utils/pdfGenerator';
+import { TypicalSchemesModal } from './TypicalSchemesModal';
+import { TypicalScheme } from '../data/typicalSchemes';
 
 interface SingleLineCanvasRendererProps {
   isThreePhase: boolean;
@@ -1689,6 +1691,7 @@ export const SingleLineDiagramTab: React.FC<SingleLineDiagramTabProps> = ({
   const [pdfColorChoice, setPdfColorChoice] = useState<'color' | 'bw'>('color');
   const [notificationMsg, setNotificationMsg] = useState<string | null>(null);
   const [isFullscreenDiagram, setIsFullscreenDiagram] = useState(false);
+  const [isTypicalSchemesModalOpen, setIsTypicalSchemesModalOpen] = useState(false);
   const diagramDocRef = useRef<HTMLDivElement>(null);
 
   // Contractor Branding & Logo State for PDF Output
@@ -1949,6 +1952,138 @@ export const SingleLineDiagramTab: React.FC<SingleLineDiagramTabProps> = ({
     };
   });
 
+  // REAL-TIME VALIDATOR FOR RIC N°01 & RIC N°04
+  const ricCompliance = useMemo(() => {
+    // 1. Feeder Drop Check (RIC N°04)
+    const feederDropOk = currentDrop.dropPercent <= maxAllowedDropPercent;
+
+    // 2. Breaking Capacity Check (RIC N°01 / RIC N°02)
+    const igaKa = parseFloat(igaBreaking.replace(/[^0-9.]/g, '')) || 6;
+    const igaBreakingOk = igaKa >= 6;
+
+    // 3. Circuits Evaluation (Voltage Drop, Thermal Coordination, Breaking Capacity, RCD Group)
+    const circuitResults = circuits.map((c) => {
+      const loadW = c.loadW || 0;
+      const ib = Math.round((loadW / (220 * 0.93)) * 10) / 10;
+      const inRating = c.amps || 16;
+      const wireMm2 = parseFloat(c.wire.replace(/[^0-9.]/g, '')) || 2.5;
+
+      // Allowable current Iz for copper EVA in conduit per RIC N°04 Table 4.4
+      let iz = 21;
+      if (wireMm2 <= 1.5) iz = 15.5;
+      else if (wireMm2 <= 2.5) iz = 21;
+      else if (wireMm2 <= 4.0) iz = 28;
+      else if (wireMm2 <= 6.0) iz = 36;
+      else if (wireMm2 <= 10.0) iz = 50;
+
+      // Branch voltage drop (assumed 18m avg branch length)
+      const branchLength = 18;
+      const branchDropVolts = (2 * branchLength * Math.max(0.5, ib) * rhoCopper) / wireMm2;
+      const branchDropPercent = (branchDropVolts / 220) * 100;
+      const branchDropOk = branchDropPercent <= 3.0;
+
+      // Thermal coordination: Ib <= In <= Iz
+      const overloadOk = ib <= inRating;
+      const thermalOk = inRating <= iz;
+
+      // Breaking capacity of MCB
+      const mcbKa = parseFloat(c.breakingCapacity.replace(/[^0-9.]/g, '')) || 6;
+      const mcbKaOk = mcbKa >= 6;
+
+      let status: 'ok' | 'warning' | 'error' = 'ok';
+      let message = 'Cumple RIC N°01 y RIC N°04';
+
+      if (!thermalOk) {
+        status = 'error';
+        message = `PELIGRO TÉRMICO (RIC N°04): Disyuntor ${inRating}A excede capacidad del conductor ${wireMm2}mm² (Iz=${iz}A)`;
+      } else if (!overloadOk) {
+        status = 'error';
+        message = `SOBRECARGA (RIC N°01): Corriente de carga Ib=${ib}A supera In=${inRating}A`;
+      } else if (!branchDropOk) {
+        status = 'error';
+        message = `CAÍDA DE TENSIÓN EXCEDIDA (RIC N°04): ΔV=${branchDropPercent.toFixed(2)}% > 3.0%`;
+      } else if (!mcbKaOk) {
+        status = 'warning';
+        message = `PODER DE CORTE MARGINAL (RIC N°01): Poder de corte ${mcbKa}kA < 6kA`;
+      } else if (branchDropPercent > 2.5 || ib > inRating * 0.8) {
+        status = 'warning';
+        message = `PARÁMETRO CERCANO AL LÍMITE: Carga al ${Math.round((ib / inRating) * 100)}% o ΔV=${branchDropPercent.toFixed(2)}%`;
+      }
+
+      return {
+        code: c.code,
+        name: c.name,
+        ib,
+        inRating,
+        wireMm2,
+        iz,
+        branchDropPercent,
+        status,
+        message,
+      };
+    });
+
+    const errorCount = circuitResults.filter((r) => r.status === 'error').length + (feederDropOk ? 0 : 1) + (igaBreakingOk ? 0 : 1);
+    const warningCount = circuitResults.filter((r) => r.status === 'warning').length;
+    const isOverallCompliant = errorCount === 0;
+
+    return {
+      feederDropOk,
+      igaBreakingOk,
+      circuitResults,
+      errorCount,
+      warningCount,
+      isOverallCompliant,
+    };
+  }, [circuits, currentDrop, maxAllowedDropPercent, igaBreaking]);
+
+  // Handle Loading a Typical Scheme from Library
+  const handleSelectTypicalScheme = (scheme: TypicalScheme) => {
+    const newCircuitBreakers: Record<string, any> = {};
+    scheme.circuits.forEach((c) => {
+      newCircuitBreakers[c.code] = {
+        customName: c.name,
+        amps: c.breakerAmps || 16,
+        curve: c.breakerRating.includes('Curva B') ? 'Curva B' : c.breakerRating.includes('Curva D') ? 'Curva D' : 'Curva C',
+        breakingCapacity: c.breakerRating.includes('10kA') ? '10kA' : '6kA',
+        wireSection: c.wireSection,
+        pipeType: c.conduitType,
+      };
+    });
+
+    const newSpecs: CustomProtectionSpecs = {
+      iga: {
+        amps: scheme.igaSpec.amps,
+        curve: `Curva ${scheme.igaSpec.curve}`,
+        breakingCapacity: `${scheme.igaSpec.icnKa}kA`,
+        poles: `${scheme.igaSpec.poles}x`,
+      },
+      dps: {
+        voltage: scheme.dpsSpec.voltage,
+        dischargeCurrent: `${scheme.dpsSpec.dischargeKa}kA`,
+      },
+      rcds: scheme.rcdsSpec.reduce((acc, r, idx) => {
+        acc[idx + 1] = {
+          amps: r.amps,
+          sensitivity: `${r.sensitivityMa}mA`,
+          classType: r.classType,
+        };
+        return acc;
+      }, {} as Record<number, any>),
+      circuitBreakers: newCircuitBreakers,
+    };
+
+    if (setFeederLength && scheme.feederLength) {
+      setFeederLength(scheme.feederLength);
+    }
+    if (setFeederWireSection && scheme.feederWireSection) {
+      setFeederWireSection(scheme.feederWireSection);
+    }
+
+    updateSpecsAndSync(newSpecs, `⚡ Esquema típico "${scheme.name}" cargado exitosamente.`);
+    setIsTypicalSchemesModalOpen(false);
+  };
+
   const rcdCount = Math.max(1, Math.ceil(circuits.length / 3));
 
   const handleDownloadPdf = async (choice: 'color' | 'bw' = 'color') => {
@@ -2173,6 +2308,15 @@ export const SingleLineDiagramTab: React.FC<SingleLineDiagramTabProps> = ({
 
         <div className="flex flex-wrap items-center gap-2 shrink-0">
           <button
+            onClick={() => setIsTypicalSchemesModalOpen(true)}
+            className="flex items-center gap-1.5 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-black text-xs px-3.5 py-2 rounded-lg shadow-lg border border-cyan-400/50 transition-all active:scale-95"
+            title="Cargar esquemas típicos preconfigurados (Tablero Básico, Trifásico, Clima, etc.)"
+          >
+            <Layers className="w-4 h-4 text-cyan-200" />
+            <span>Biblioteca Esquemas Típicos</span>
+          </button>
+
+          <button
             onClick={handleAutoGenerateSchema}
             className="flex items-center gap-1.5 bg-gradient-to-r from-amber-500 via-amber-400 to-emerald-500 hover:from-amber-400 hover:to-emerald-400 text-slate-950 font-black text-xs px-3.5 py-2 rounded-lg shadow-lg border border-amber-300/50 transition-all active:scale-95"
             title="Generar esquema unilineal automático según cargas actuales y norma RIC SEC"
@@ -2239,6 +2383,115 @@ export const SingleLineDiagramTab: React.FC<SingleLineDiagramTabProps> = ({
             <span>Imprimir</span>
           </button>
         </div>
+      </div>
+
+      {/* MODAL DE BIBLIOTECA DE ESQUEMAS TÍPICOS */}
+      <TypicalSchemesModal
+        isOpen={isTypicalSchemesModalOpen}
+        onClose={() => setIsTypicalSchemesModalOpen(false)}
+        onSelectScheme={handleSelectTypicalScheme}
+      />
+
+      {/* MONITOR DE CUMPLIMIENTO RIC N°01 Y RIC N°04 EN TIEMPO REAL */}
+      <div
+        className={`rounded-2xl border p-5 shadow-xl transition-all ${
+          ricCompliance.isOverallCompliant
+            ? 'bg-emerald-950/30 border-emerald-500/40 text-emerald-100'
+            : ricCompliance.errorCount > 0
+            ? 'bg-rose-950/40 border-rose-500/60 text-rose-100'
+            : 'bg-amber-950/40 border-amber-500/60 text-amber-100'
+        }`}
+      >
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+          <div className="flex items-center gap-3.5">
+            <div
+              className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 shadow-inner ${
+                ricCompliance.isOverallCompliant
+                  ? 'bg-emerald-500/20 border border-emerald-500/40 text-emerald-400'
+                  : ricCompliance.errorCount > 0
+                  ? 'bg-rose-500/20 border border-rose-500/40 text-rose-400'
+                  : 'bg-amber-500/20 border border-amber-500/40 text-amber-400'
+              }`}
+            >
+              {ricCompliance.isOverallCompliant ? (
+                <ShieldCheck className="w-6 h-6 text-emerald-400" />
+              ) : ricCompliance.errorCount > 0 ? (
+                <ShieldAlert className="w-6 h-6 text-rose-400" />
+              ) : (
+                <AlertTriangle className="w-6 h-6 text-amber-400" />
+              )}
+            </div>
+
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-sm font-black text-white uppercase tracking-wide">
+                  Validador RIC N°01 & RIC N°04 en Tiempo Real
+                </h3>
+                <span
+                  className={`text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full border ${
+                    ricCompliance.isOverallCompliant
+                      ? 'bg-emerald-900/80 text-emerald-300 border-emerald-600'
+                      : ricCompliance.errorCount > 0
+                      ? 'bg-rose-900/80 text-rose-300 border-rose-600 animate-pulse'
+                      : 'bg-amber-900/80 text-amber-300 border-amber-600'
+                  }`}
+                >
+                  {ricCompliance.isOverallCompliant
+                    ? '100% CONFORME NORMATIVA SEC'
+                    : `${ricCompliance.errorCount} ERRORES • ${ricCompliance.warningCount} ADVERTENCIAS`}
+                </span>
+              </div>
+              <p className="text-xs text-slate-300 mt-0.5">
+                Verificación continua de corrientes de cortocircuito (Icn ≥ 6kA), coordinación térmica de conductores EVA (Ib ≤ In ≤ Iz) y caídas de tensión (ΔV ≤ 3.0%).
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-bold px-3 py-1 rounded-xl bg-slate-950/80 border border-slate-800 text-slate-300 flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
+              <span>{ricCompliance.circuitResults.filter((r) => r.status === 'ok').length} Conformes</span>
+            </span>
+            <span className="text-[11px] font-bold px-3 py-1 rounded-xl bg-slate-950/80 border border-slate-800 text-slate-300 flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-amber-400" />
+              <span>{ricCompliance.warningCount} Advertencias</span>
+            </span>
+            <span className="text-[11px] font-bold px-3 py-1 rounded-xl bg-slate-950/80 border border-slate-800 text-slate-300 flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-rose-400" />
+              <span>{ricCompliance.errorCount} Observaciones</span>
+            </span>
+          </div>
+        </div>
+
+        {/* List of Non-compliant Items if Any */}
+        {!ricCompliance.isOverallCompliant && (
+          <div className="mt-3 space-y-2">
+            {ricCompliance.circuitResults
+              .filter((r) => r.status !== 'ok')
+              .map((res) => (
+                <div
+                  key={res.code}
+                  className={`p-2.5 rounded-xl border text-xs flex items-center justify-between gap-3 ${
+                    res.status === 'error'
+                      ? 'bg-rose-950/80 border-rose-700/80 text-rose-200'
+                      : 'bg-amber-950/80 border-amber-700/80 text-amber-200'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono font-black text-white bg-slate-950 px-2 py-0.5 rounded border border-slate-800">
+                      {res.code}
+                    </span>
+                    <span className="font-bold text-white">{res.name}:</span>
+                    <span className="text-[11px]">{res.message}</span>
+                  </div>
+
+                  <span className="text-[10px] font-mono shrink-0 px-2 py-0.5 rounded bg-slate-950/80">
+                    Ib={res.ib}A | In={res.inRating}A | S={res.wireMm2}mm²
+                  </span>
+                </div>
+              ))}
+          </div>
+        )}
       </div>
 
       {/* CARD CALLOUT DE GENERACIÓN AUTOMÁTICA DE ESQUEMA UNILINEAL */}

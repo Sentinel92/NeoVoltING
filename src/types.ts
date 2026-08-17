@@ -151,6 +151,7 @@ export interface BankAccountDetails {
 
 export interface ContractorConfig {
   senderEmail: string;
+  email?: string;
   companyName: string;
   installerName: string;
   secLicense: string;
@@ -277,12 +278,50 @@ export interface ClientSignature {
   termsAccepted: boolean;
 }
 
+export interface FaultSnapshot {
+  id: string;
+  timestamp: string;
+  title: string;
+  faultType: string;
+  trippedCompId?: string;
+  trippedCompName?: string;
+  iccAmps: number;
+  timeMs: number;
+  normReference: string;
+  description: string;
+  componentsState: Array<{
+    id: string;
+    name: string;
+    type: string;
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    ampacity?: number;
+    curve?: string;
+    isTripped?: boolean;
+    isOff?: boolean;
+  }>;
+  wiresState: Array<{
+    id: string;
+    fromCompId: string;
+    fromTermId: string;
+    toCompId: string;
+    toTermId: string;
+    color: string;
+  }>;
+  supplyType: string;
+  boardSvgPreview?: string;
+  faultLocation?: { x: number; y: number };
+}
+
 export interface WorkReportData {
   clientName: string;
   address: string;
   briefNotes: string;
   generatedAiReport: string;
   photoPaths: string[]; // Base64 or object URLs
+  faultSnapshots?: FaultSnapshot[];
   testResults: {
     isolationMOhms: number;
     earthResistanceOhms: number;

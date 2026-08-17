@@ -1120,6 +1120,7 @@ export default function App() {
         isOpen={isDrawerOpen}
         onClose={() => setIsDrawerOpen(false)}
         user={user}
+        contractor={contractor}
         onLogout={handleLogout}
         setActiveTab={setActiveTab}
       />

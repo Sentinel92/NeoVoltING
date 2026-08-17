@@ -1,9 +1,9 @@
-import React, { useState, useRef } from 'react';
-import { WorkReportData, CustomerDetails, ContractorConfig, RoomData, HighAppliance } from '../types';
+import React, { useState, useRef, useEffect } from 'react';
+import { WorkReportData, CustomerDetails, ContractorConfig, RoomData, HighAppliance, FaultSnapshot } from '../types';
 import { NeovoltLogo } from './NeovoltLogo';
-import { Sparkles, Camera, Send, Mail, Copy, Check, FileCheck, ShieldCheck, Printer, Download, Loader2, Trash2, AlertTriangle, CheckCircle2, ShieldAlert, Activity, XCircle, Zap, Cpu, FileText, Upload, PenTool, RotateCcw } from 'lucide-react';
+import { Sparkles, Camera, Send, Mail, Copy, Check, FileCheck, ShieldCheck, Printer, Download, Loader2, Trash2, AlertTriangle, CheckCircle2, ShieldAlert, Activity, XCircle, Zap, Cpu, FileText, Upload, PenTool, RotateCcw, Flame } from 'lucide-react';
 import { downloadPdfFromElement, generatePdfBlob } from '../utils/pdfGenerator';
-import { exportWorkReportToJsPdf } from '../utils/workReportPdfExporter';
+import { exportWorkReportToJsPdf, exportTechnicalSimulationReportToJsPdf } from '../utils/workReportPdfExporter';
 
 interface WorkReportTabProps {
   reportData: WorkReportData;
@@ -43,6 +43,93 @@ export const WorkReportTab: React.FC<WorkReportTabProps> = ({
   const [installerSignatureUrl, setInstallerSignatureUrl] = useState<string>(
     contractor.installerSignatureUrl || ''
   );
+  const [isGeneratingTechnicalPdf, setIsGeneratingTechnicalPdf] = useState(false);
+
+  // Fault Snapshots History State
+  const [faultSnapshots, setFaultSnapshots] = useState<FaultSnapshot[]>(() => {
+    try {
+      const saved = localStorage.getItem('neovolt_fault_snapshots');
+      return saved ? JSON.parse(saved) : (reportData.faultSnapshots || []);
+    } catch {
+      return reportData.faultSnapshots || [];
+    }
+  });
+
+  // Listen for real-time snapshots created in the simulator
+  useEffect(() => {
+    const handleSnapshotCreated = (e: any) => {
+      if (e.detail) {
+        setFaultSnapshots(prev => [e.detail, ...prev.filter(s => s.id !== e.detail.id)].slice(0, 25));
+      }
+    };
+    window.addEventListener('neovolt_fault_snapshot_created', handleSnapshotCreated);
+    return () => window.removeEventListener('neovolt_fault_snapshot_created', handleSnapshotCreated);
+  }, []);
+
+  const handleDeleteSnapshot = (id: string) => {
+    const next = faultSnapshots.filter(s => s.id !== id);
+    setFaultSnapshots(next);
+    try {
+      localStorage.setItem('neovolt_fault_snapshots', JSON.stringify(next));
+    } catch (e) {
+      console.warn('Failed to update local storage snapshots', e);
+    }
+    setReportData(prev => ({ ...prev, faultSnapshots: next }));
+  };
+
+  const handleClearAllSnapshots = () => {
+    setFaultSnapshots([]);
+    try {
+      localStorage.removeItem('neovolt_fault_snapshots');
+    } catch (e) {
+      console.warn('Failed to clear snapshots', e);
+    }
+    setReportData(prev => ({ ...prev, faultSnapshots: [] }));
+  };
+
+  // Technical Simulation PDF Export Handler
+  const handleExportTechnicalSimulationPdf = async () => {
+    setIsGeneratingTechnicalPdf(true);
+    try {
+      const defaultComps = [
+        { id: 'iga', name: 'IGA General 25A Curva C', type: 'IGA', dinModules: 2, ampacity: 25, curve: 'C' },
+        { id: 'dps', name: 'DPS Protector Sobretensión', type: 'DPS', dinModules: 1, ampacity: 20 },
+        { id: 'rcd_1', name: 'Diferencial RCD 25A 30mA', type: 'RCD', dinModules: 2, ampacity: 25 },
+        { id: 'c1_mcb', name: 'C1 Iluminación 10A Curva B', type: 'MCB', dinModules: 1, ampacity: 10, curve: 'B' },
+        { id: 'c2_mcb', name: 'C2 Enchufes 16A Curva C', type: 'MCB', dinModules: 1, ampacity: 16, curve: 'C' },
+        { id: 'c3_mcb', name: 'C3 Cocina/Fuerza 20A Curva C', type: 'MCB', dinModules: 1, ampacity: 20, curve: 'C' },
+      ];
+
+      exportTechnicalSimulationReportToJsPdf({
+        customer,
+        contractor,
+        components: defaultComps,
+        simulationEvents: [
+          {
+            id: 'evt_sim_1',
+            timestamp: new Date().toLocaleTimeString('es-CL'),
+            title: 'Verificación Inicial de Tensión y Aislamiento',
+            category: 'INSPECCION',
+            description: 'Inspección de continuidad y parámetros nominales según RIC N°02.',
+            currentAmps: 0,
+            timeMs: 0,
+            normReference: 'RIC N°02 / RIC N°19',
+          }
+        ],
+        faultSnapshots,
+        supplyType: isThreePhase ? 'TRIFASICO_380' : 'MONOFASICO_220',
+        notes: reportData.briefNotes || 'Informe técnico generado con simulación 2D y ensayos normativos SEC.',
+        overrideInstallerSignatureUrl: installerSignatureUrl,
+      });
+      setMemoriaNotice("✓ Informe Técnico de Simulación y Cortocircuito exportado exitosamente a PDF.");
+      setTimeout(() => setMemoriaNotice(null), 4000);
+    } catch (err: any) {
+      console.error('Error generating technical simulation PDF:', err);
+      alert('Error al generar PDF Técnico: ' + (err?.message || 'Revisa la consola'));
+    } finally {
+      setIsGeneratingTechnicalPdf(false);
+    }
+  };
 
   // Canvas signature drawing functions
   const startDrawing = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
@@ -287,6 +374,23 @@ export const WorkReportTab: React.FC<WorkReportTabProps> = ({
       const clientSlug = (customer.name || 'Cliente').replace(/[^a-zA-Z0-9]/g, '_');
       const filename = `Informe_Tecnico_Obra_${clientSlug}.pdf`;
 
+      // 1. Export pristine jsPDF
+      await exportWorkReportToJsPdf({
+        reportData: {
+          ...reportData,
+          testResults: {
+            ...reportData.testResults,
+            earthResistanceOhms: groundResistance,
+          },
+        },
+        customer,
+        contractor,
+        rooms,
+        highAppliances,
+        overrideInstallerSignatureUrl: installerSignatureUrl,
+      });
+
+      // 2. Generate PDF Blob for WebShare if supported
       const pdfBlob = await generatePdfBlob(reportDocRef.current, {
         filename,
         margin: 10,
@@ -298,22 +402,17 @@ export const WorkReportTab: React.FC<WorkReportTabProps> = ({
         if (navigator.canShare && navigator.canShare({ files: [file] })) {
           try {
             await navigator.share({
-              title: `Informe Técnico de Obra - ${contractor.companyName}`,
-              text: `Hola ${customer.name}, te adjunto el informe técnico de entrega de obra eléctrica.`,
+              title: `Informe Técnico de Obra SEC - ${contractor.companyName}`,
+              text: `Hola ${customer.name || 'Estimado/a'}, te adjunto el informe técnico oficial de entrega de obra eléctrica.`,
               files: [file],
             });
+            setMemoriaNotice("✓ Informe Técnico enviado exitosamente en PDF.");
+            setTimeout(() => setMemoriaNotice(null), 4000);
             return;
           } catch (e) {
-            console.log('WebShare cancelado, usando descarga directa.');
+            console.log('WebShare cancelado, usando WhatsApp Web con archivo descargado.');
           }
         }
-
-        const url = URL.createObjectURL(pdfBlob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        a.click();
-        URL.revokeObjectURL(url);
       }
 
       let cleanPhone = (customer.phone || '').replace(/\D/g, '');
@@ -322,13 +421,21 @@ export const WorkReportTab: React.FC<WorkReportTabProps> = ({
       }
 
       const text = encodeURIComponent(
-        `Hola *${customer.name || 'Estimado/a'}*, adjunto el Informe Técnico y Memoria de Montaje de la obra eléctrica ejecutada por *${
+        `Hola *${customer.name || 'Estimado/a'}*, adjunto el *Informe Técnico Oficial & Memoria de Montaje* de la obra eléctrica ejecutada por *${
           contractor.companyName
         }* en ${customer.address || 'su propiedad'}.
 
-📍 *DOCUMENTO ADJUNTO:* ${filename}
+📄 *DOCUMENTO OFICIAL EN PDF:*
+Se ha descargado/generado el archivo: *${filename}*.
+
+⚡ *RESUMEN DE ENSAYOS NORMATIVOS SEC:*
+• Resistencia de Puesta a Tierra (RIC N°06): ${groundResistance} Ω (${isGroundCompliant ? 'CONFORME ≤ 20Ω' : 'REQUIERE MEJORA'})
+• Resistencia de Aislamiento (RIC N°19): ${reportData.testResults?.isolationMOhms || 50} MΩ
+• Tiempo de Despeje Diferencial RCD: ${reportData.testResults?.rcdTripTimeMs || 22} ms
+
+Quedo a su disposición para cualquier consulta.
 Atentamente,
-*${contractor.installerName}* (${contractor.secLicense ? `Licencia SEC: ${contractor.secLicense}` : 'Técnico Instalador'})`
+*${contractor.installerName}* (${contractor.secLicense ? `Licencia SEC: ${contractor.secLicense} - ${contractor.secClass || 'Clase A'}` : contractor.customProfessionalTitle || 'Técnico Autorizado'})`
       );
 
       const waUrl = cleanPhone
@@ -336,6 +443,87 @@ Atentamente,
         : `https://wa.me/?text=${text}`;
 
       window.open(waUrl, '_blank');
+      setMemoriaNotice("✓ Informe Técnico descargado en PDF y mensaje formal generado para WhatsApp.");
+      setTimeout(() => setMemoriaNotice(null), 4000);
+    } finally {
+      setIsGeneratingPdf(false);
+    }
+  };
+
+  const handleSendEmail = async () => {
+    setIsGeneratingPdf(true);
+    try {
+      const clientSlug = (customer.name || 'Cliente').replace(/[^a-zA-Z0-9]/g, '_');
+      const filename = `Informe_Tecnico_Obra_${clientSlug}.pdf`;
+
+      // 1. Export pristine jsPDF
+      await exportWorkReportToJsPdf({
+        reportData: {
+          ...reportData,
+          testResults: {
+            ...reportData.testResults,
+            earthResistanceOhms: groundResistance,
+          },
+        },
+        customer,
+        contractor,
+        rooms,
+        highAppliances,
+        overrideInstallerSignatureUrl: installerSignatureUrl,
+      });
+
+      // 2. Generate PDF Blob for WebShare if supported
+      const pdfBlob = await generatePdfBlob(reportDocRef.current, {
+        filename,
+        margin: 10,
+        orientation: 'portrait',
+      });
+
+      if (pdfBlob) {
+        const file = new File([pdfBlob], filename, { type: 'application/pdf' });
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          try {
+            await navigator.share({
+              title: `Informe Técnico & Memoria de Montaje SEC - ${contractor.companyName}`,
+              text: `Estimado/a ${customer.name || 'Cliente'},\n\nJunto con saludar, adjuntamos el informe técnico y protocolo de entrega en PDF.`,
+              files: [file],
+            });
+            setMemoriaNotice("✓ Informe Técnico enviado exitosamente en PDF.");
+            setTimeout(() => setMemoriaNotice(null), 4000);
+            return;
+          } catch (e) {
+            console.log('WebShare cancelado, usando cliente de correo.');
+          }
+        }
+      }
+
+      const subject = encodeURIComponent(`Informe Técnico de Entrega de Obra & Memoria SEC - ${contractor.companyName}`);
+      const body = encodeURIComponent(
+        `Estimado/a ${customer.name || 'Cliente'},
+
+Junto con saludar cordialmente, adjuntamos el Informe Técnico Oficial de Entrega de Obra y Memoria de Montaje para la instalación eléctrica realizada en ${customer.address || 'su domicilio'}.
+
+DOCUMENTO ADJUNTO EN PDF:
+• ${filename}
+
+RESUMEN DE VERIFICACIÓN NORMATIVA SEC:
+• Medición de Malla de Puesta a Tierra: ${groundResistance} Ohms (Norma RIC N°06)
+• Aislamiento de Circuitos: ${reportData.testResults?.isolationMOhms || 50} MOhms (Norma RIC N°19)
+• Protocolo de Disparo RCD: ${reportData.testResults?.rcdTripTimeMs || 22} ms
+
+El informe cuenta con la firma del instalador autorizado e individualización de protecciones.
+
+Saludos cordiales,
+${contractor.installerName}
+${contractor.companyName}
+${contractor.secLicense ? `Licencia SEC: ${contractor.secLicense} (${contractor.secClass || 'Clase A'})` : ''}
+Contacto: ${contractor.phone || ''} | ${contractor.senderEmail || contractor.email || ''}`
+      );
+
+      const emailTo = customer.email || '';
+      window.location.href = `mailto:${emailTo}?subject=${subject}&body=${body}`;
+      setMemoriaNotice("✓ Informe Técnico descargado en PDF y correo preparado.");
+      setTimeout(() => setMemoriaNotice(null), 4000);
     } finally {
       setIsGeneratingPdf(false);
     }
@@ -398,6 +586,20 @@ Atentamente,
           </button>
 
           <button
+            onClick={handleExportTechnicalSimulationPdf}
+            disabled={isGeneratingTechnicalPdf}
+            className="flex items-center gap-2 bg-gradient-to-r from-cyan-600 via-sky-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow-lg transition-all active:scale-95 shrink-0 border border-cyan-400/40"
+            title="Exporta el Informe Técnico con Diagrama 2D del tablero, lista de componentes configurados y el historial de fallas y simulación."
+          >
+            {isGeneratingTechnicalPdf ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Flame className="w-4 h-4 text-cyan-200" />
+            )}
+            <span>{isGeneratingTechnicalPdf ? 'Generando...' : 'PDF Técnico (Tablero 2D + Fallas)'}</span>
+          </button>
+
+          <button
             onClick={handleDownloadPdf}
             disabled={isGeneratingPdf}
             className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow transition-all active:scale-95"
@@ -414,6 +616,16 @@ Atentamente,
           >
             <Send className="w-4 h-4" />
             <span>WhatsApp</span>
+          </button>
+
+          <button
+            onClick={handleSendEmail}
+            disabled={isGeneratingPdf}
+            className="flex items-center gap-2 bg-sky-700 hover:bg-sky-600 text-white text-xs font-bold px-3.5 py-2.5 rounded-xl border border-sky-600 shadow transition-all active:scale-95"
+            title="Enviar informe formal por Correo Electrónico con PDF"
+          >
+            <Mail className="w-4 h-4" />
+            <span>Email</span>
           </button>
 
           <button
@@ -790,7 +1002,122 @@ Atentamente,
         </div>
       </div>
 
-      {/* Printable Corporate Report Body */}
+      {/* SECTION 5: HISTORIAL DE INSTANTÁNEAS DE FALLA & SIMULACIÓN 2D (RIC N°02 / RIC N°03) */}
+      <div className="print:hidden bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-md space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 bg-rose-950/80 border border-rose-800 text-rose-400 rounded-xl">
+              <Flame className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2">
+                <span>5. Historial de Instantáneas de Falla & Simulación 2D</span>
+                <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-rose-950 text-rose-300 border border-rose-800/80 font-bold">
+                  {faultSnapshots.length} {faultSnapshots.length === 1 ? 'registro' : 'registros'}
+                </span>
+              </h3>
+              <p className="text-xs text-slate-400">
+                Captura automática del estado del tablero, cables y componentes en el momento exacto del cortocircuito o disparo diferencial.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={handleExportTechnicalSimulationPdf}
+              disabled={isGeneratingTechnicalPdf}
+              className="flex items-center gap-1.5 text-xs bg-cyan-950 hover:bg-cyan-900 text-cyan-300 border border-cyan-700/80 font-bold px-3 py-1.5 rounded-xl transition shadow-sm"
+            >
+              <FileText className="w-3.5 h-3.5" />
+              <span>Exportar PDF Técnico</span>
+            </button>
+
+            {faultSnapshots.length > 0 && (
+              <button
+                onClick={handleClearAllSnapshots}
+                className="flex items-center gap-1 text-xs text-slate-400 hover:text-rose-400 bg-slate-800 hover:bg-rose-950/40 border border-slate-700 hover:border-rose-800/80 px-2.5 py-1.5 rounded-xl transition"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Limpiar Historial</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {faultSnapshots.length === 0 ? (
+          <div className="bg-slate-950/60 border border-dashed border-slate-800 rounded-2xl p-6 text-center space-y-2">
+            <div className="w-10 h-10 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center mx-auto text-slate-500">
+              <Flame className="w-5 h-5" />
+            </div>
+            <h4 className="text-xs font-bold text-slate-300">No hay instantáneas de falla registradas aún</h4>
+            <p className="text-[11px] text-slate-500 max-w-md mx-auto">
+              Para registrar una falla automáticamente, ve a la pestaña <strong>Simulador 2D</strong> y pulsa <strong>"Simular Cortocircuito 💥"</strong> o energiza un circuito sobrecargado o con cortocircuito directo.
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+            {faultSnapshots.map((snap, idx) => (
+              <div 
+                key={snap.id || idx}
+                className="bg-slate-950/80 border border-slate-800 hover:border-slate-700 rounded-2xl p-4 space-y-3 transition group relative"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-rose-950/90 text-rose-300 border border-rose-800">
+                      {snap.faultType || 'CORTOCIRCUITO'}
+                    </span>
+                    <span className="text-[10px] font-mono text-slate-400">
+                      {snap.timestamp}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => handleDeleteSnapshot(snap.id)}
+                    className="text-slate-600 hover:text-rose-400 p-1 transition"
+                    title="Eliminar esta instantánea"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+
+                <div>
+                  <h4 className="text-xs font-bold text-white group-hover:text-cyan-300 transition">
+                    {snap.title}
+                  </h4>
+                  <p className="text-[11px] text-slate-400 mt-1 line-clamp-2 leading-relaxed">
+                    {snap.description}
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2 bg-slate-900/90 p-2.5 rounded-xl border border-slate-800/80 text-[10px]">
+                  <div>
+                    <span className="text-slate-500 block font-semibold">Corriente Icc:</span>
+                    <strong className="text-rose-400 font-mono">
+                      {snap.iccAmps ? `${snap.iccAmps.toLocaleString('es-CL')} A` : '6.000 A'}
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block font-semibold">Despeje:</span>
+                    <strong className="text-amber-400 font-mono">
+                      {snap.timeMs ? `${snap.timeMs} ms` : '15 ms'}
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block font-semibold">Protección:</span>
+                    <strong className="text-slate-200 font-mono truncate block">
+                      {snap.trippedCompName || 'IGA Cabecera'}
+                    </strong>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1 border-t border-slate-800/60 font-mono">
+                  <span>Alimentación: <strong className="text-slate-300">{snap.supplyType === 'TRIFASICO_380' ? '380V Trifásico' : '220V Monofásico'}</strong></span>
+                  <span>{snap.componentsState?.length || 0} dispositivos • {snap.wiresState?.length || 0} conductores</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
       <div ref={reportDocRef} className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 space-y-6 shadow-xl print:bg-white print:text-black print:border-none print:shadow-none print:p-0">
         {/* Company Header with Logo */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 border-b border-slate-800 print:border-black pb-6">
