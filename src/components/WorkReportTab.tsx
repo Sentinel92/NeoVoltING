@@ -55,15 +55,32 @@ export const WorkReportTab: React.FC<WorkReportTabProps> = ({
     }
   });
 
-  // Listen for real-time snapshots created in the simulator
+  // Listen for real-time snapshots created in the simulator & 3D screenshots
   useEffect(() => {
     const handleSnapshotCreated = (e: any) => {
       if (e.detail) {
         setFaultSnapshots(prev => [e.detail, ...prev.filter(s => s.id !== e.detail.id)].slice(0, 25));
       }
     };
+    const handle3dScreenshotSaved = (e: any) => {
+      if (e.detail?.dataUrl) {
+        setReportData(prev => {
+          if (!prev.photoPaths.includes(e.detail.dataUrl)) {
+            return { ...prev, photoPaths: [...prev.photoPaths, e.detail.dataUrl] };
+          }
+          return prev;
+        });
+        setMemoriaNotice("✓ Captura de Simulación 3D adjuntada automáticamente al informe.");
+        setTimeout(() => setMemoriaNotice(null), 4000);
+      }
+    };
+
     window.addEventListener('neovolt_fault_snapshot_created', handleSnapshotCreated);
-    return () => window.removeEventListener('neovolt_fault_snapshot_created', handleSnapshotCreated);
+    window.addEventListener('neovolt_3d_screenshot_saved', handle3dScreenshotSaved);
+    return () => {
+      window.removeEventListener('neovolt_fault_snapshot_created', handleSnapshotCreated);
+      window.removeEventListener('neovolt_3d_screenshot_saved', handle3dScreenshotSaved);
+    };
   }, []);
 
   const handleDeleteSnapshot = (id: string) => {
@@ -854,7 +871,27 @@ Contacto: ${contractor.phone || ''} | ${contractor.senderEmail || contractor.ema
             <span className="text-xs font-bold text-slate-300">
               3. Fotografías de Respaldo de Terreno ({reportData.photoPaths.length})
             </span>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* Attach cached 3D simulation screenshot button */}
+              {localStorage.getItem('neovolt_last_3d_screenshot') && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const cached3d = localStorage.getItem('neovolt_last_3d_screenshot');
+                    if (cached3d && !reportData.photoPaths.includes(cached3d)) {
+                      setReportData(prev => ({ ...prev, photoPaths: [...prev.photoPaths, cached3d] }));
+                      setMemoriaNotice("✓ Captura 3D del Gabinete adjuntada al informe.");
+                      setTimeout(() => setMemoriaNotice(null), 3500);
+                    }
+                  }}
+                  className="flex items-center gap-1.5 bg-cyan-950 hover:bg-cyan-900 text-cyan-300 border border-cyan-500/50 text-xs font-semibold px-3 py-1.5 rounded-lg transition-all"
+                  title="Adjuntar la última captura de simulación 3D del gabinete realizada en el generador de tableros"
+                >
+                  <Camera className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>+ Adjuntar Captura 3D</span>
+                </button>
+              )}
+
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
