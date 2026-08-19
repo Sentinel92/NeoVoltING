@@ -26,12 +26,14 @@ import {
   AlertTriangle,
   Sliders,
   Check,
-  Gauge
+  Gauge,
+  FileCode
 } from 'lucide-react';
 import { RoomData, HighAppliance, BudgetItem } from '../types';
 import { WireCalculationModule } from './WireCalculationModule';
 import { DemandCalculationModule } from './DemandCalculationModule';
 import { LaborPricingCalculatorModal } from './LaborPricingCalculatorModal';
+import { AutoCadViewerModal } from './AutoCadViewerModal';
 
 interface ToolsModuleProps {
   onNavigateToTab?: (tab: string) => void;
@@ -221,6 +223,12 @@ export const ToolsModule: React.FC<ToolsModuleProps> = ({
           </h3>
           <div className="space-y-3">
             <ToolCard 
+              icon={<FileCode className="w-5 h-5 text-cyan-400" />}
+              title="Lector & Visor de Planos AutoCAD (.DXF / .DWG)"
+              desc="Abre planos CAD con capas, cotas, centros de luz y cubicación SEC"
+              onClick={() => handleCardClick('autocad_viewer')}
+            />
+            <ToolCard 
               icon={<ShieldCheck className="w-5 h-5 text-fuchsia-400" />}
               title="Normativa RICs (SEC)"
               desc="Consulta interactiva de los 19 Pliegos Técnicos RIC"
@@ -347,6 +355,19 @@ export const ToolsModule: React.FC<ToolsModuleProps> = ({
           highAppliances={highAppliances}
           currentLaborCost={currentLaborCost}
           onApplyLaborCost={onApplyLaborCost}
+        />
+      )}
+
+      {/* AutoCAD Plan Viewer Modal */}
+      {activeModal === 'autocad_viewer' && (
+        <AutoCadViewerModal
+          isOpen={true}
+          onClose={() => setActiveModal(null)}
+          onApplyPlanToCensus={(scannedRooms, scannedHigh) => {
+            if (onNavigateToTab) onNavigateToTab('census');
+            setActiveModal(null);
+          }}
+          onNavigateToTab={onNavigateToTab}
         />
       )}
 

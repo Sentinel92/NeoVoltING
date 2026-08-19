@@ -45,9 +45,11 @@ import {
   Moon,
   Sun,
   Snowflake,
-  Thermometer
+  Thermometer,
+  FileCode
 } from 'lucide-react';
 import { PlanScannerModal } from './PlanScannerModal';
+import { AutoCadViewerModal } from './AutoCadViewerModal';
 
 interface LoadCensusTabProps {
   rooms?: RoomData[];
@@ -70,8 +72,9 @@ export function LoadCensusTab({
   const [serviceMode, setServiceMode] = useState<ServiceTypeMode>('census');
   const [transferToast, setTransferToast] = useState<string | null>(null);
 
-  // Scanner Modal
+  // Scanner & CAD Modals
   const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [isCadViewerOpen, setIsCadViewerOpen] = useState(false);
   const [expandedRoomId, setExpandedRoomId] = useState<string | null>(rooms[0]?.id || null);
 
   // --- MODE 1: Censo State ---
@@ -723,19 +726,30 @@ export function LoadCensusTab({
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             {serviceMode === 'census' && (
-              <button
-                onClick={() => setIsScannerOpen(true)}
-                className="bg-gradient-to-r from-fuchsia-600 to-pink-600 hover:from-fuchsia-500 hover:to-pink-500 text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow-lg shadow-fuchsia-950/40 flex items-center gap-2 transition-all"
-              >
-                <Sparkles className="w-4 h-4 text-amber-300 animate-pulse" />
-                <span>Escanear Plano IA</span>
-              </button>
+              <>
+                <button
+                  onClick={() => setIsCadViewerOpen(true)}
+                  className="bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white text-xs font-bold px-3.5 py-2.5 rounded-xl shadow-lg shadow-cyan-950/40 flex items-center gap-2 transition-all"
+                  title="Cargar y visualizar planos de AutoCAD (.DXF / .DWG) con capas y cotas"
+                >
+                  <FileCode className="w-4 h-4 text-cyan-200" />
+                  <span>Cargar Plano AutoCAD (.DXF)</span>
+                </button>
+
+                <button
+                  onClick={() => setIsScannerOpen(true)}
+                  className="bg-gradient-to-r from-fuchsia-600 to-pink-600 hover:from-fuchsia-500 hover:to-pink-500 text-white text-xs font-bold px-3.5 py-2.5 rounded-xl shadow-lg shadow-fuchsia-950/40 flex items-center gap-2 transition-all"
+                >
+                  <Sparkles className="w-4 h-4 text-amber-300 animate-pulse" />
+                  <span>Escanear Foto / IA</span>
+                </button>
+              </>
             )}
             <button
               onClick={handleLoadStandardPreset}
-              className="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold px-3.5 py-2.5 rounded-xl border border-slate-700/80 flex items-center gap-1.5 transition-all"
+              className="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold px-3 py-2.5 rounded-xl border border-slate-700/80 flex items-center gap-1.5 transition-all"
             >
               <RefreshCw className="w-3.5 h-3.5 text-slate-400" />
               <span>Cargar Ejemplo</span>
@@ -2047,6 +2061,21 @@ export function LoadCensusTab({
             </button>
           </form>
         </div>
+      )}
+
+      {/* AutoCad Vector Viewer Modal (.DXF / .DWG) */}
+      {isCadViewerOpen && (
+        <AutoCadViewerModal
+          isOpen={isCadViewerOpen}
+          onClose={() => setIsCadViewerOpen(false)}
+          onApplyPlanToCensus={(scannedRooms, scannedHigh) => {
+            if (setRooms) setRooms(scannedRooms);
+            if (setHighAppliances) setHighAppliances(scannedHigh);
+            setIsCadViewerOpen(false);
+            triggerToast('¡Plano AutoCAD aplicado con éxito!');
+          }}
+          onNavigateToTab={onNavigateToTab}
+        />
       )}
 
       {/* Plan Scanner AI Modal */}

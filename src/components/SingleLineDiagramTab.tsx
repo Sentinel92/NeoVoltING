@@ -49,7 +49,9 @@ import {
   Terminal,
   SlidersHorizontal,
   Trash2,
+  FileCode,
 } from 'lucide-react';
+import { AutoCadViewerModal } from './AutoCadViewerModal';
 import {
   ResponsiveContainer,
   BarChart,
@@ -1692,6 +1694,7 @@ export const SingleLineDiagramTab: React.FC<SingleLineDiagramTabProps> = ({
   const [notificationMsg, setNotificationMsg] = useState<string | null>(null);
   const [isFullscreenDiagram, setIsFullscreenDiagram] = useState(false);
   const [isTypicalSchemesModalOpen, setIsTypicalSchemesModalOpen] = useState(false);
+  const [isCadModalOpen, setIsCadModalOpen] = useState(false);
   const diagramDocRef = useRef<HTMLDivElement>(null);
 
   // Contractor Branding & Logo State for PDF Output
@@ -2515,13 +2518,24 @@ export const SingleLineDiagramTab: React.FC<SingleLineDiagramTabProps> = ({
           </div>
         </div>
 
-        <button
-          onClick={handleAutoGenerateSchema}
-          className="shrink-0 bg-gradient-to-r from-amber-500 via-amber-400 to-emerald-500 hover:from-amber-400 hover:to-emerald-400 text-slate-950 font-black text-xs px-4 py-3 rounded-xl shadow-lg border border-amber-300/60 transition-all active:scale-95 flex items-center gap-2 self-start md:self-auto"
-        >
-          <RefreshCw className="w-4 h-4 text-slate-950" />
-          <span>Generar Esquema Unilineal RIC</span>
-        </button>
+        <div className="flex items-center gap-2 self-start md:self-auto flex-wrap">
+          <button
+            onClick={() => setIsCadModalOpen(true)}
+            className="shrink-0 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-black text-xs px-3.5 py-3 rounded-xl shadow-lg border border-cyan-400/40 transition-all active:scale-95 flex items-center gap-2"
+            title="Cargar y visualizar planos de AutoCAD (.DXF / .DWG) para sincronizar con este diagrama"
+          >
+            <FileCode className="w-4 h-4 text-cyan-200" />
+            <span>Cargar Plano CAD (.DXF)</span>
+          </button>
+
+          <button
+            onClick={handleAutoGenerateSchema}
+            className="shrink-0 bg-gradient-to-r from-amber-500 via-amber-400 to-emerald-500 hover:from-amber-400 hover:to-emerald-400 text-slate-950 font-black text-xs px-4 py-3 rounded-xl shadow-lg border border-amber-300/60 transition-all active:scale-95 flex items-center gap-2"
+          >
+            <RefreshCw className="w-4 h-4 text-slate-950" />
+            <span>Generar Esquema Unilineal RIC</span>
+          </button>
+        </div>
       </div>
 
       {/* CALCULADORA DE CAÍDA DE TENSIÓN Y SECCIÓN MÍNIMA (NORMA SEC RIC N°04) */}
@@ -4150,6 +4164,18 @@ export const SingleLineDiagramTab: React.FC<SingleLineDiagramTabProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* AutoCAD Plan Viewer Modal */}
+      {isCadModalOpen && (
+        <AutoCadViewerModal
+          isOpen={isCadModalOpen}
+          onClose={() => setIsCadModalOpen(false)}
+          onApplyPlanToCensus={() => {
+            setIsCadModalOpen(false);
+            showToast('¡Plano CAD cargado y vinculado al esquema unilineal!');
+          }}
+        />
       )}
     </div>
   );

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { RoomData, HighAppliance } from '../types';
-import { FileUp, Sparkles, Check, X, Building2, Upload, AlertCircle, Scan, ArrowRight, Image as ImageIcon } from 'lucide-react';
+import { FileUp, Sparkles, Check, X, Building2, Upload, AlertCircle, Scan, ArrowRight, Image as ImageIcon, FileCode, Layers } from 'lucide-react';
+import { AutoCadViewerModal } from './AutoCadViewerModal';
 
 interface PlanScannerModalProps {
   isOpen: boolean;
@@ -18,6 +19,7 @@ export const PlanScannerModal: React.FC<PlanScannerModalProps> = ({
   const [planType, setPlanType] = useState('Plano Residencial Casa/Depto');
   const [planNotes, setPlanNotes] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showCadModal, setShowCadModal] = useState(false);
 
   const [extractedData, setExtractedData] = useState<{
     detectedSurfaceM2: number;
@@ -28,6 +30,23 @@ export const PlanScannerModal: React.FC<PlanScannerModalProps> = ({
   } | null>(null);
 
   if (!isOpen) return null;
+
+  if (showCadModal) {
+    return (
+      <AutoCadViewerModal
+        isOpen={showCadModal}
+        onClose={() => {
+          setShowCadModal(false);
+          onClose();
+        }}
+        onApplyPlanToCensus={(rooms, appliances) => {
+          onApplyPlanToCensus(rooms, appliances);
+          setShowCadModal(false);
+          onClose();
+        }}
+      />
+    );
+  }
 
   const sampleBlueprints = [
     {
@@ -107,7 +126,9 @@ export const PlanScannerModal: React.FC<PlanScannerModalProps> = ({
             id: `app_plan_${Date.now()}_${idx}`,
             name: h.name || 'Carga Dedicada',
             powerWatts: h.powerWatts || 2000,
-            isDedicatedCircuit: h.isDedicatedCircuit ?? true,
+            category: h.category || 'Cocina',
+            socketType: h.socketType || '16A',
+            voltage: h.voltage || 220,
           })
         );
 
@@ -151,6 +172,21 @@ export const PlanScannerModal: React.FC<PlanScannerModalProps> = ({
 
           <button onClick={onClose} className="text-slate-400 hover:text-white p-1 rounded-lg">
             <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Mode Switcher Banner */}
+        <div className="bg-slate-950 p-2.5 rounded-2xl border border-slate-800 flex items-center justify-between gap-3 shrink-0">
+          <div className="flex items-center gap-2 text-xs">
+            <span className="text-slate-400 font-semibold">¿Tienes un archivo de AutoCAD (.DXF o .DWG)?</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowCadModal(true)}
+            className="bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold text-xs px-3.5 py-1.5 rounded-xl shadow flex items-center gap-1.5 transition-all"
+          >
+            <FileCode className="w-4 h-4 text-cyan-200" />
+            <span>Abrir Visor AutoCAD Vectorial (.DXF)</span>
           </button>
         </div>
 
