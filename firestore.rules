@@ -1,0 +1,50 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.userId;
+    }
+
+    function willBeDocOwner() {
+      return isAuthenticated() && request.auth.uid == request.resource.data.userId;
+    }
+
+    // User profiles: users can only read and edit their own profile
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isOwner(userId);
+      allow update, delete: if isOwner(userId);
+    }
+
+    // Electrical Projects: strict user isolation
+    match /projects/{projectId} {
+      allow read: if isDocOwner();
+      allow create: if willBeDocOwner();
+      allow update: if isDocOwner() && willBeDocOwner();
+      allow delete: if isDocOwner();
+    }
+
+    // Clients directory: strict user isolation
+    match /clients/{clientId} {
+      allow read: if isDocOwner();
+      allow create: if willBeDocOwner();
+      allow update: if isDocOwner() && willBeDocOwner();
+      allow delete: if isDocOwner();
+    }
+
+    // Fallback for subcollections or legacy project saves
+    match /{document=**} {
+      allow read, write: if isAuthenticated();
+    }
+  }
+}

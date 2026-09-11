@@ -7,7 +7,9 @@ import {
   ServiceTypeMode, 
   ReplacementItem, 
   MaintenanceCheckItem, 
-  FaultDiagnosticData 
+  FaultDiagnosticData,
+  CustomerDetails,
+  ContractorConfig
 } from '../types';
 import { 
   Zap, 
@@ -46,16 +48,29 @@ import {
   Sun,
   Snowflake,
   Thermometer,
-  FileCode
+  FileCode,
+  ClipboardCheck,
+  Clock
 } from 'lucide-react';
 import { PlanScannerModal } from './PlanScannerModal';
 import { AutoCadViewerModal } from './AutoCadViewerModal';
+import { FieldSurveyPointsManager } from './FieldSurveyPointsManager';
+import { RepairPlanProjector } from './RepairPlanProjector';
+import { LaborTimeEstimatorView } from './LaborTimeEstimatorView';
+import {
+  SurveyPointRecord,
+  INITIAL_DEFAULT_POINTS,
+  calculateRepairPlan,
+} from '../utils/technicalSurveyEngine';
+import { calculateLaborTimeEstimation } from '../utils/laborEstimationEngine';
 
 interface LoadCensusTabProps {
   rooms?: RoomData[];
   highAppliances?: HighAppliance[];
   setRooms?: React.Dispatch<React.SetStateAction<RoomData[]>>;
   setHighAppliances?: React.Dispatch<React.SetStateAction<HighAppliance[]>>;
+  customer?: CustomerDetails;
+  contractor?: ContractorConfig;
   onTransferToQuote?: (items: BudgetItem[]) => void;
   onNavigateToTab?: (tab: string) => void;
 }
@@ -65,12 +80,77 @@ export function LoadCensusTab({
   highAppliances = [],
   setRooms,
   setHighAppliances,
+  customer,
+  contractor,
   onTransferToQuote,
   onNavigateToTab,
 }: LoadCensusTabProps) {
-  // Service Type Mode State
-  const [serviceMode, setServiceMode] = useState<ServiceTypeMode>('census');
+  // Service Type Mode State: Default to new 'audit' mode for professional SEC survey
+  const [serviceMode, setServiceMode] = useState<ServiceTypeMode>('audit');
   const [transferToast, setTransferToast] = useState<string | null>(null);
+
+  // Field Survey Points State (Norma SEC/RIC Chile)
+  const [surveyPoints, setSurveyPoints] = useState<SurveyPointRecord[]>(() => {
+    try {
+      const saved = localStorage.getItem('neovolt_field_survey_points');
+      return saved ? JSON.parse(saved) : INITIAL_DEFAULT_POINTS;
+    } catch {
+      return INITIAL_DEFAULT_POINTS;
+    }
+  });
+
+  const handleAddSurveyPoint = (newPoint: SurveyPointRecord) => {
+    setSurveyPoints((prev) => {
+      const updated = [newPoint, ...prev];
+      try {
+        localStorage.setItem('neovolt_field_survey_points', JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+    triggerToast(`✓ Punto agregado: ${newPoint.name}`);
+  };
+
+  const handleUpdateSurveyPoint = (updatedPoint: SurveyPointRecord) => {
+    setSurveyPoints((prev) => {
+      const updated = prev.map((p) => (p.id === updatedPoint.id ? updatedPoint : p));
+      try {
+        localStorage.setItem('neovolt_field_survey_points', JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+    triggerToast(`✓ Punto actualizado: ${updatedPoint.name}`);
+  };
+
+  const handleDeleteSurveyPoint = (pointId: string) => {
+    setSurveyPoints((prev) => {
+      const updated = prev.filter((p) => p.id !== pointId);
+      try {
+        localStorage.setItem('neovolt_field_survey_points', JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+    triggerToast('Punto eliminado del censo.');
+  };
+
+  const handleLoadDefaultSurveyPoints = () => {
+    setSurveyPoints(INITIAL_DEFAULT_POINTS);
+    try {
+      localStorage.setItem('neovolt_field_survey_points', JSON.stringify(INITIAL_DEFAULT_POINTS));
+    } catch {}
+    triggerToast('✓ Censo de ejemplo cargado (5 puntos con diagnóstico RIC).');
+  };
+
+  // Sub-tabs for Audit Mode (Survey vs Labor Estimation vs Diagnostics & Repairs)
+  const [auditSubTab, setAuditSubTab] = useState<'survey' | 'labor' | 'repairs'>('survey');
+  const [laborHourlyRate, setLaborHourlyRate] = useState<number>(22000);
+
+  const auditRepairSummary = useMemo(() => {
+    return calculateRepairPlan(surveyPoints, laborHourlyRate);
+  }, [surveyPoints, laborHourlyRate]);
+
+  const laborEstimationSummary = useMemo(() => {
+    return calculateLaborTimeEstimation(surveyPoints, { hourlyRateClp: laborHourlyRate });
+  }, [surveyPoints, laborHourlyRate]);
 
   // Scanner & CAD Modals
   const [isScannerOpen, setIsScannerOpen] = useState(false);
@@ -757,8 +837,35 @@ export function LoadCensusTab({
           </div>
         </div>
 
-        {/* 4 Interactive Service Mode Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mt-4">
+        {/* 5 Interactive Service Mode Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 mt-4">
+          {/* Mode 0: Auditoría SEC & Reparaciones (NEW PRO ENGINE) */}
+          <button
+            onClick={() => setServiceMode('audit')}
+            className={`p-3.5 rounded-xl border text-left transition-all flex flex-col justify-between ${
+              serviceMode === 'audit'
+                ? 'bg-fuchsia-950/60 border-fuchsia-500 shadow-xl shadow-fuchsia-950/50 ring-1 ring-fuchsia-500'
+                : 'bg-slate-950/60 border-slate-800 hover:border-slate-700 opacity-80 hover:opacity-100'
+            }`}
+          >
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <ShieldAlert className={`w-4 h-4 ${serviceMode === 'audit' ? 'text-fuchsia-400' : 'text-slate-400'}`} />
+                <span className="text-[10px] bg-fuchsia-950 text-fuchsia-300 border border-fuchsia-800/60 px-1.5 py-0.5 rounded font-bold">
+                  RIC SEC
+                </span>
+              </div>
+              <div className="text-xs font-bold text-white">Auditoría & Reparación</div>
+              <div className="text-[11px] text-slate-400 mt-1 leading-snug">
+                Censo técnico de conductores, protecciones, anomalías RIC y cubicación.
+              </div>
+            </div>
+            <div className="mt-3 text-[10px] font-semibold text-fuchsia-400 flex items-center gap-1">
+              <span>{surveyPoints.length} Puntos ({auditRepairSummary.criticalCount} Críticos)</span>
+              <ArrowRight className="w-3 h-3" />
+            </div>
+          </button>
+
           {/* Mode 1: Censo Completo */}
           <button
             onClick={() => setServiceMode('census')}
@@ -771,7 +878,7 @@ export function LoadCensusTab({
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <Home className={`w-4 h-4 ${serviceMode === 'census' ? 'text-fuchsia-400' : 'text-slate-400'}`} />
-                <span className="text-[10px] bg-fuchsia-950 text-fuchsia-300 border border-fuchsia-800/60 px-1.5 py-0.5 rounded font-bold">
+                <span className="text-[10px] bg-cyan-950 text-cyan-300 border border-cyan-800/60 px-1.5 py-0.5 rounded font-bold">
                   Obra / TE1
                 </span>
               </div>
@@ -780,7 +887,7 @@ export function LoadCensusTab({
                 Levantamiento completo por recintos, puntos de alumbrado, enchufes y gran consumo.
               </div>
             </div>
-            <div className="mt-3 text-[10px] font-semibold text-fuchsia-400 flex items-center gap-1">
+            <div className="mt-3 text-[10px] font-semibold text-cyan-400 flex items-center gap-1">
               <span>{rooms.length} Recintos registrados</span>
               <ArrowRight className="w-3 h-3" />
             </div>
@@ -868,6 +975,98 @@ export function LoadCensusTab({
           </button>
         </div>
       </div>
+
+      {/* ========================================================================= */}
+      {/* MODE 0 VIEW: AUDITORÍA TÉCNICA SEC & PLAN DE REPARACIONES */}
+      {/* ========================================================================= */}
+      {serviceMode === 'audit' && (
+        <div className="space-y-6">
+          {/* Sub-tab Navigation */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between bg-slate-900/90 p-2 rounded-2xl border border-slate-800 gap-2">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <button
+                onClick={() => setAuditSubTab('survey')}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
+                  auditSubTab === 'survey'
+                    ? 'bg-fuchsia-600 text-white shadow-lg shadow-fuchsia-950/50'
+                    : 'bg-slate-800/60 text-slate-400 hover:text-white'
+                }`}
+              >
+                <ClipboardCheck className="w-4 h-4" />
+                <span>1. Censo de Terreno ({surveyPoints.length} Puntos)</span>
+              </button>
+
+              <button
+                onClick={() => setAuditSubTab('labor')}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
+                  auditSubTab === 'labor'
+                    ? 'bg-fuchsia-600 text-white shadow-lg shadow-fuchsia-950/50'
+                    : 'bg-slate-800/60 text-slate-400 hover:text-white'
+                }`}
+              >
+                <Clock className="w-4 h-4 text-fuchsia-300" />
+                <span>2. Estimación Horas-Hombre ({laborEstimationSummary.adjustedManHoursHH} HH)</span>
+                <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-amber-400 text-slate-950 font-black">
+                  ~{laborEstimationSummary.projectedDurationDays}d
+                </span>
+              </button>
+
+              <button
+                onClick={() => setAuditSubTab('repairs')}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
+                  auditSubTab === 'repairs'
+                    ? 'bg-fuchsia-600 text-white shadow-lg shadow-fuchsia-950/50'
+                    : 'bg-slate-800/60 text-slate-400 hover:text-white'
+                }`}
+              >
+                <ShieldAlert className="w-4 h-4" />
+                <span>3. Diagnóstico RIC & Presupuesto</span>
+                {auditRepairSummary.criticalCount > 0 && (
+                  <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-rose-500 text-slate-950 font-black">
+                    {auditRepairSummary.criticalCount}
+                  </span>
+                )}
+              </button>
+            </div>
+
+            <div className="hidden lg:flex items-center gap-2 text-xs text-slate-400 font-mono pr-2">
+              <span>Normativa: <strong>Pliegos RIC N°01 a N°19</strong></span>
+            </div>
+          </div>
+
+          {/* Render Subtab 1: Field Survey Manager */}
+          {auditSubTab === 'survey' && (
+            <FieldSurveyPointsManager
+              points={surveyPoints}
+              onAddPoint={handleAddSurveyPoint}
+              onUpdatePoint={handleUpdateSurveyPoint}
+              onDeletePoint={handleDeleteSurveyPoint}
+              onLoadPresetPoints={handleLoadDefaultSurveyPoints}
+            />
+          )}
+
+          {/* Render Subtab 2: Labor & Man-Hours Estimation Engine */}
+          {auditSubTab === 'labor' && (
+            <LaborTimeEstimatorView
+              points={surveyPoints}
+              hourlyRate={laborHourlyRate}
+              onRateChange={setLaborHourlyRate}
+              onTransferLaborToQuote={onTransferToQuote}
+            />
+          )}
+
+          {/* Render Subtab 3: Repair Plan & Cubication Projector */}
+          {auditSubTab === 'repairs' && (
+            <RepairPlanProjector
+              points={surveyPoints}
+              customer={customer}
+              contractor={contractor}
+              onTransferToQuote={onTransferToQuote}
+              onNavigateToTab={onNavigateToTab}
+            />
+          )}
+        </div>
+      )}
 
       {/* ========================================================================= */}
       {/* MODE 1 VIEW: CENSO COMPLETO & INSTALACIÓN NUEVA */}

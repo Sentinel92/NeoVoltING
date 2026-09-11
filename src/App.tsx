@@ -34,6 +34,7 @@ import { ToolsModule } from './components/ToolsModule';
 import { MobileDrawer } from './components/MobileDrawer';
 import { TabSkeletonScreen } from './components/TabSkeletonScreen';
 import { motion, AnimatePresence } from 'motion/react';
+import { AuthProvider, useAuth } from './lib/AuthContext';
 
 import { saveUserDataToFirebase, loadUserDataFromFirebase, subscribeToUserDataRealtime } from './lib/firebase';
 import { 
@@ -146,16 +147,94 @@ const Breadcrumb: React.FC<BreadcrumbProps> = ({ activeTab, onNavigateToTab }) =
   );
 };
 
-export default function App() {
-  // User Authentication State
-  const [user, setUser] = useState<UserSession>({
-    email: 'ineovolt@gmail.com',
-    name: 'Ing. Camilo Rojas',
-    secNumber: 'SEC-84291-CL',
-    isLoggedIn: true,
-    role: 'engineer',
-    professionalTitle: 'Ingeniero en Electricidad y Automatización Industrial',
+function AppContent() {
+  const { currentUser, userProfile, userSession, logout: authLogout, isGuestMode } = useAuth();
+
+  // User Authentication State - synced with AuthContext
+  const [user, setUser] = useState<UserSession>(() => {
+    return userSession.isLoggedIn
+      ? userSession
+      : {
+          email: 'ineovolt@gmail.com',
+          name: 'Ing. Camilo Rojas',
+          secNumber: 'SEC-84291-CL',
+          isLoggedIn: true,
+          role: 'engineer',
+          professionalTitle: 'Ingeniero en Electricidad y Automatización Industrial',
+        };
   });
+
+  // Contractor Config
+  const [contractor, setContractor] = useState<ContractorConfig>(() => {
+    const local = localStorage.getItem('neovolt_contractor');
+    if (local) {
+      try {
+        return JSON.parse(local);
+      } catch {}
+    }
+    return {
+      senderEmail: 'ineovolt@gmail.com',
+      companyName: 'NEOVOLT - Ingeniería Eléctrica de Precisión',
+      installerName: 'Camilo Rojas',
+      secLicense: 'SEC-84291-CL',
+      secClass: 'Clase A (Alta y Baja Tensión)',
+      rut: '76.892.410-5',
+      phone: '+56 9 9876 5432',
+      address: 'Av. Andrés Bello 2233, Providencia, Santiago',
+      bankDetails: {
+        bankName: 'Banco de Chile',
+        accountType: 'Cuenta Corriente',
+        accountNumber: '123-45678-00',
+        holderName: 'NEOVOLT SpA',
+        holderRut: '76.892.410-5',
+        emailForNotify: 'ineovolt@gmail.com',
+      },
+    };
+  });
+
+  useEffect(() => {
+    localStorage.setItem('neovolt_contractor', JSON.stringify(contractor));
+  }, [contractor]);
+
+  useEffect(() => {
+    if (userSession.isLoggedIn) {
+      setUser(userSession);
+    }
+  }, [userSession]);
+
+  // Synchronize Firestore user document (Avatar, Empresa, Nombre, Licencia SEC) with App State
+  useEffect(() => {
+    if (userProfile && (currentUser || userSession.isLoggedIn)) {
+      setUser((prev) => ({
+        ...prev,
+        uid: currentUser?.uid || prev.uid,
+        userId: currentUser?.uid || prev.userId,
+        email: currentUser?.email || userProfile.email || prev.email,
+        name: userProfile.fullName || prev.name,
+        companyName: userProfile.companyName || prev.companyName,
+        secNumber: userProfile.secLicense || prev.secNumber,
+        secClass: userProfile.secClass || prev.secClass,
+        phone: userProfile.phone || prev.phone,
+        address: userProfile.address || prev.address,
+        googleAvatarUrl: userProfile.avatarUrl || prev.googleAvatarUrl,
+        isLoggedIn: true,
+      }));
+
+      setContractor((prev) => ({
+        ...prev,
+        companyName: userProfile.companyName || prev.companyName,
+        installerName: userProfile.fullName || prev.installerName,
+        secLicense: userProfile.secLicense || prev.secLicense,
+        secClass: userProfile.secClass || prev.secClass,
+        rut: userProfile.rut || prev.rut,
+        phone: userProfile.phone || prev.phone,
+        address: userProfile.address || prev.address,
+        senderEmail: userProfile.email || prev.senderEmail,
+        customAvatarUrl: userProfile.avatarUrl || prev.customAvatarUrl,
+        customLogoUrl: userProfile.avatarUrl || prev.customLogoUrl,
+      }));
+    }
+  }, [userProfile, currentUser, userSession]);
 
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -715,34 +794,6 @@ export default function App() {
     propertyType: 'Residencial',
   });
 
-  // Contractor Config
-  const [contractor, setContractor] = useState<ContractorConfig>(() => {
-    const local = localStorage.getItem('neovolt_contractor');
-    if (local) return JSON.parse(local);
-    return {
-      senderEmail: 'ineovolt@gmail.com',
-      companyName: 'NEOVOLT - Ingeniería Eléctrica de Precisión',
-      installerName: 'Camilo Rojas',
-      secLicense: 'SEC-84291-CL',
-      secClass: 'Clase A (Alta y Baja Tensión)',
-      rut: '76.892.410-5',
-      phone: '+56 9 9876 5432',
-      address: 'Av. Andrés Bello 2233, Providencia, Santiago',
-      bankDetails: {
-        bankName: 'Banco de Chile',
-        accountType: 'Cuenta Corriente',
-        accountNumber: '123-45678-00',
-        holderName: 'NEOVOLT SpA',
-        holderRut: '76.892.410-5',
-        emailForNotify: 'ineovolt@gmail.com',
-      },
-    };
-  });
-
-  useEffect(() => {
-    localStorage.setItem('neovolt_contractor', JSON.stringify(contractor));
-  }, [contractor]);
-
   // Work Report Data
   const [workReport, setWorkReport] = useState<WorkReportData>({
     clientName: customer.name,
@@ -807,13 +858,15 @@ export default function App() {
         }
       } else {
         // Online: Save to Firebase Firestore & Cloud API asynchronously
-        const fbResult = await saveUserDataToFirebase(user.email, payload);
+        const userIdentifier = currentUser?.uid || user.userId || user.email;
+        const currentUserId = currentUser?.uid || user.userId;
+        const fbResult = await saveUserDataToFirebase(userIdentifier, payload, currentUserId);
         
         try {
           fetch('/api/cloud-sync/save', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email: user.email, data: payload }),
+            body: JSON.stringify({ email: user.email, userId: currentUserId, data: payload }),
           }).catch(() => {});
         } catch (e) {
           console.warn('Servidor secundario de la nube inaccesible:', e);
@@ -879,11 +932,13 @@ export default function App() {
 
   // Load from Cloud & Firebase Function silently in background
   const handleLoadFromCloud = async () => {
-    if (!user.email) return;
+    if (!user.email && !currentUser?.uid) return;
     setIsCloudSyncing(true);
     try {
-      // 1. Prioritize Firebase Firestore
-      const fbData = await loadUserDataFromFirebase(user.email);
+      // 1. Prioritize Firebase Firestore with UID filtering
+      const userIdentifier = currentUser?.uid || user.userId || user.email;
+      const currentUserId = currentUser?.uid || user.userId;
+      const fbData = await loadUserDataFromFirebase(userIdentifier, currentUserId);
       if (fbData) {
         isUpdatingFromRemoteRef.current = true;
         if (fbData.clients) setClients(fbData.clients);
@@ -947,48 +1002,55 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (user.isLoggedIn && user.email) {
+    if (user.isLoggedIn && (user.email || currentUser?.uid)) {
       handleLoadFromCloud();
     }
-  }, [user.email]);
+  }, [user.email, currentUser?.uid]);
 
   // Real-time Firestore onSnapshot Listener for multi-device & multi-tab auto sync
   useEffect(() => {
-    if (!user.isLoggedIn || !user.email) return;
+    if (!user.isLoggedIn || (!user.email && !currentUser?.uid)) return;
 
-    const unsubscribe = subscribeToUserDataRealtime(user.email, (fbData, isFromOtherDevice) => {
-      if (isFromOtherDevice && fbData) {
-        isUpdatingFromRemoteRef.current = true;
-        if (fbData.clients) setClients(fbData.clients);
-        if (fbData.projects) setProjects(fbData.projects);
-        if (fbData.rooms) setRooms(fbData.rooms);
-        if (fbData.highAppliances) setHighAppliances(fbData.highAppliances);
-        if (fbData.budgetItems) setBudgetItems(fbData.budgetItems);
-        if (fbData.customer) setCustomer(fbData.customer);
-        if (fbData.contractor) setContractor(fbData.contractor);
-        if (fbData.workReport) setWorkReport(fbData.workReport);
-        if (fbData.feederLength) setFeederLength(fbData.feederLength);
-        if (fbData.isThreePhase !== undefined) setIsThreePhase(fbData.isThreePhase);
-        if (fbData.feederWireSection) setFeederWireSection(fbData.feederWireSection);
-        const now = new Date().toISOString();
-        setLastCloudSyncTime(now);
-        localStorage.setItem('neovolt_last_cloud_sync', now);
+    const userIdentifier = currentUser?.uid || user.userId || user.email;
+    const currentUserId = currentUser?.uid || user.userId;
 
-        lastSavedHashRef.current = JSON.stringify({
-          projects: fbData.projects || projects,
-          clients: fbData.clients || clients,
-          rooms: fbData.rooms || rooms,
-          highAppliances: fbData.highAppliances || highAppliances,
-          feederLength: fbData.feederLength || feederLength,
-          isThreePhase: fbData.isThreePhase !== undefined ? fbData.isThreePhase : isThreePhase,
-          feederWireSection: fbData.feederWireSection || feederWireSection,
-          budgetItems: fbData.budgetItems || budgetItems,
-          customer: fbData.customer || customer,
-          contractor: fbData.contractor || contractor,
-          workReport: fbData.workReport || workReport,
-        });
-      }
-    });
+    const unsubscribe = subscribeToUserDataRealtime(
+      userIdentifier,
+      (fbData, isFromOtherDevice) => {
+        if (isFromOtherDevice && fbData) {
+          isUpdatingFromRemoteRef.current = true;
+          if (fbData.clients) setClients(fbData.clients);
+          if (fbData.projects) setProjects(fbData.projects);
+          if (fbData.rooms) setRooms(fbData.rooms);
+          if (fbData.highAppliances) setHighAppliances(fbData.highAppliances);
+          if (fbData.budgetItems) setBudgetItems(fbData.budgetItems);
+          if (fbData.customer) setCustomer(fbData.customer);
+          if (fbData.contractor) setContractor(fbData.contractor);
+          if (fbData.workReport) setWorkReport(fbData.workReport);
+          if (fbData.feederLength) setFeederLength(fbData.feederLength);
+          if (fbData.isThreePhase !== undefined) setIsThreePhase(fbData.isThreePhase);
+          if (fbData.feederWireSection) setFeederWireSection(fbData.feederWireSection);
+          const now = new Date().toISOString();
+          setLastCloudSyncTime(now);
+          localStorage.setItem('neovolt_last_cloud_sync', now);
+
+          lastSavedHashRef.current = JSON.stringify({
+            projects: fbData.projects || projects,
+            clients: fbData.clients || clients,
+            rooms: fbData.rooms || rooms,
+            highAppliances: fbData.highAppliances || highAppliances,
+            feederLength: fbData.feederLength || feederLength,
+            isThreePhase: fbData.isThreePhase !== undefined ? fbData.isThreePhase : isThreePhase,
+            feederWireSection: fbData.feederWireSection || feederWireSection,
+            budgetItems: fbData.budgetItems || budgetItems,
+            customer: fbData.customer || customer,
+            contractor: fbData.contractor || contractor,
+            workReport: fbData.workReport || workReport,
+          });
+        }
+      },
+      currentUserId
+    );
 
     return () => {
       unsubscribe();
@@ -1069,7 +1131,8 @@ export default function App() {
     setActiveTab('report');
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await authLogout();
     setUser({
       email: '',
       name: '',
@@ -1235,6 +1298,8 @@ export default function App() {
               switch (activeTab) {
                 case 'physical':
                 case 'tablero_2d':
+                case 'simulator':
+                case 'board':
                 case '7':
                   return <ProfessionalBoardGeneratorTab />;
 
@@ -1279,6 +1344,8 @@ export default function App() {
                       highAppliances={highAppliances}
                       setRooms={setRooms}
                       setHighAppliances={setHighAppliances}
+                      customer={customer}
+                      contractor={contractor}
                       onTransferToQuote={(newItems) => {
                         setBudgetItems((prev) => [...prev, ...newItems]);
                         setActiveTab('quote');
@@ -1388,12 +1455,6 @@ export default function App() {
                       customer={customer}
                     />
                   );
-
-                case 'physical':
-                case 'simulator':
-                case 'board':
-                case '7':
-                  return <ProfessionalBoardGeneratorTab />;
 
                 case 'quote':
                 case '8':
@@ -1508,5 +1569,13 @@ export default function App() {
         </div>
       </footer>
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
   );
 }

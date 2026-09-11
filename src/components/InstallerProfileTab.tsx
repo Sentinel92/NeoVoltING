@@ -13,6 +13,7 @@ import {
   Camera,
   X,
 } from 'lucide-react';
+import { useAuth } from '../lib/AuthContext';
 
 interface InstallerProfileTabProps {
   contractor: ContractorConfig;
@@ -33,6 +34,7 @@ export const InstallerProfileTab: React.FC<InstallerProfileTabProps> = ({
   setUser,
   onSaveToCloud,
 }) => {
+  const { updateProfileData, currentUser } = useAuth();
   const [savedSuccess, setSavedSuccess] = useState(false);
 
   const syncToLocalStorageAndNotify = (updatedContractor: ContractorConfig, newAvatar?: string, newLogo?: string) => {
@@ -66,6 +68,20 @@ export const InstallerProfileTab: React.FC<InstallerProfileTabProps> = ({
       localStorage.setItem('neovolt_contractor', JSON.stringify(updatedContractor));
 
       window.dispatchEvent(new CustomEvent('neovolt_profile_updated', { detail: profileData }));
+
+      // Sincronizar documento en colección users de Firestore si está autenticado
+      if (currentUser?.uid) {
+        updateProfileData({
+          fullName: updatedContractor.installerName,
+          companyName: updatedContractor.companyName,
+          secLicense: updatedContractor.secLicense,
+          secClass: updatedContractor.secClass,
+          rut: updatedContractor.rut,
+          phone: updatedContractor.phone,
+          address: updatedContractor.address,
+          avatarUrl: updatedContractor.customAvatarUrl || (newAvatar !== undefined ? newAvatar : undefined),
+        }).catch(() => {});
+      }
     } catch (err) {
       console.warn('Could not sync profile to localStorage', err);
     }

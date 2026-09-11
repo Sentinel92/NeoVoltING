@@ -1,0 +1,74 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User profile with technical SEC credentials and preferences",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "fullName": { "type": "string" },
+        "rut": { "type": "string" },
+        "secLicense": { "type": "string" },
+        "secClass": { "type": "string" },
+        "companyName": { "type": "string" },
+        "phone": { "type": "string" },
+        "address": { "type": "string" },
+        "avatarUrl": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "email"]
+    },
+    "Project": {
+      "title": "Electrical Project",
+      "description": "Comprehensive electrical project with census, single-line diagrams, boards, and TE1 filings",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "name": { "type": "string" },
+        "clientName": { "type": "string" },
+        "address": { "type": "string" },
+        "status": { "type": "string", "enum": ["draft", "in_progress", "completed", "submitted_sec"] },
+        "totalPowerKw": { "type": "number" },
+        "circuitsCount": { "type": "number" },
+        "data": { "type": "object" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "name"]
+    },
+    "Client": {
+      "title": "Client",
+      "description": "Customer contact and billing information",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "name": { "type": "string" },
+        "rut": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "address": { "type": "string" },
+        "comuna": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "name"]
+    }
+  },
+  "firestore": {
+    "users": {
+      "entity": "User",
+      "description": "User profiles indexed by UID"
+    },
+    "projects": {
+      "entity": "Project",
+      "description": "Electrical projects isolated per user"
+    },
+    "clients": {
+      "entity": "Client",
+      "description": "Client directory isolated per user"
+    }
+  }
+}

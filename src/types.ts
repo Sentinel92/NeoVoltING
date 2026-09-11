@@ -14,14 +14,35 @@ export interface BudgetHistoryRecord {
 }
 
 export interface UserSession {
+  uid?: string;
+  userId?: string;
   email: string;
   name: string;
   secNumber: string;
+  secClass?: string;
+  companyName?: string;
+  phone?: string;
+  address?: string;
   isLoggedIn: boolean;
   role: 'installer' | 'engineer' | 'admin';
   professionalTitle?: string;
   customGeminiApiKey?: string;
   googleAvatarUrl?: string;
+}
+
+export interface UserProfile {
+  uid: string;
+  email: string;
+  fullName: string;
+  rut?: string;
+  secLicense?: string;
+  secClass?: string;
+  companyName?: string;
+  phone?: string;
+  address?: string;
+  avatarUrl?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface RoomDevice {
@@ -218,7 +239,7 @@ export interface ProjectBoardConfig {
   highAppliances?: HighAppliance[];
 }
 
-export type ServiceTypeMode = 'census' | 'replacement' | 'maintenance' | 'diagnostic';
+export type ServiceTypeMode = 'audit' | 'census' | 'replacement' | 'maintenance' | 'diagnostic';
 
 export interface ReplacementItem {
   id: string;
@@ -257,6 +278,7 @@ export interface FaultDiagnosticData {
 
 export interface ClientRecord {
   id: string;
+  userId?: string;
   name: string;
   rut: string;
   email: string;
@@ -417,6 +439,7 @@ export interface ProjectVersion {
 
 export interface ElectricalProject {
   id: string;
+  userId?: string;
   code: string; // e.g. "PRJ-2026-001"
   title: string;
   projectType: ProjectType;
