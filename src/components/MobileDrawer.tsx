@@ -5,7 +5,8 @@ import {
   Share2, HelpCircle, Power, Settings, Wrench, Navigation, CheckSquare,
   ChevronDown, ChevronUp, Calculator, ShieldCheck, Activity, Cable,
   FolderPlus, Users, Cpu, Moon, BarChart3, LayoutTemplate, Box, FileText,
-  BookOpen, FileSignature, Layers, Award, Sparkles, Building2, User as UserIcon
+  BookOpen, FileSignature, Layers, Award, Sparkles, Building2, User as UserIcon,
+  Home, Plug
 } from 'lucide-react';
 import { NeovoltLogo } from './NeovoltLogo';
 
@@ -297,6 +298,19 @@ export const MobileDrawer: React.FC<MobileDrawerProps> = ({
           >
             <CheckSquare className="w-4 h-4 text-slate-400 shrink-0" />
             <span className="font-medium text-[13px]">Cotización & Contrato</span>
+          </button>
+          <button 
+            onClick={() => navigateTo('home_services')}
+            className="flex items-center gap-4 px-6 py-2.5 text-slate-300 hover:bg-slate-800 hover:text-white transition-colors text-left group bg-cyan-950/20"
+          >
+            <div className="relative">
+              <Home className="w-4 h-4 text-cyan-400 shrink-0" />
+              <Plug className="w-2.5 h-2.5 text-amber-400 absolute -bottom-1 -right-1" />
+            </div>
+            <div className="flex flex-col">
+              <span className="font-bold text-[13px] text-cyan-300 group-hover:text-cyan-200">Servicios Hogar (Sin Tablero)</span>
+              <span className="text-[10px] text-slate-400">Enchufes, luminarias y reparaciones</span>
+            </div>
           </button>
           <button 
             onClick={() => navigateTo('catalog')}

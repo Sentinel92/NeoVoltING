@@ -455,6 +455,7 @@ export async function exportQuoteJsPdf(data: {
   includeContingency15: boolean;
   clauses?: Array<{ id: string; title: string; content: string }>;
   signatureDataUrl?: string;
+  serviceType?: 'board' | 'home_service' | string;
 }): Promise<jsPDF> {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
@@ -508,9 +509,14 @@ export async function exportQuoteJsPdf(data: {
   doc.roundedRect(144, 5, 52, 23, 1.5, 1.5, 'F');
 
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(7.5);
+  doc.setFontSize(7);
   doc.setTextColor(0, 229, 255); // Cyan
-  doc.text('PRESUPUESTO OFICIAL', 170, 10, { align: 'center' });
+  doc.text(
+    data.serviceType === 'home_service' ? 'SERVICIOS DOMICILIARIOS' : 'PRESUPUESTO OFICIAL',
+    170,
+    10,
+    { align: 'center' }
+  );
 
   doc.setFontSize(11);
   doc.setTextColor(255, 255, 255);
@@ -530,7 +536,13 @@ export async function exportQuoteJsPdf(data: {
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9);
   doc.setTextColor(15, 23, 42);
-  doc.text('DATOS DEL CLIENTE Y UBICACIÓN DE OBRA:', 18, 44);
+  doc.text(
+    data.serviceType === 'home_service'
+      ? 'DATOS DEL CLIENTE - SERVICIO DE INSTALACIÓN EN CASA:'
+      : 'DATOS DEL CLIENTE Y UBICACIÓN DE OBRA:',
+    18,
+    44
+  );
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8.5);
@@ -601,7 +613,11 @@ export async function exportQuoteJsPdf(data: {
   doc.text(`Total Materiales e Insumos:`, 114, finalY + 6);
   doc.text(`$${rawMaterialsTotal.toLocaleString('es-CL')} CLP`, 190, finalY + 6, { align: 'right' });
 
-  doc.text(`Mano de Obra Especializada SEC:`, 114, finalY + 12);
+  const laborLabel =
+    data.serviceType === 'home_service'
+      ? 'Mano de Obra Domiciliaria (RIC N°10):'
+      : 'Mano de Obra Especializada SEC:';
+  doc.text(laborLabel, 114, finalY + 12);
   doc.text(`$${data.laborCost.toLocaleString('es-CL')} CLP`, 190, finalY + 12, { align: 'right' });
 
   if (data.includeContingency15) {
@@ -645,7 +661,13 @@ export async function exportQuoteJsPdf(data: {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
     doc.setTextColor(11, 15, 25);
-    doc.text('CONDICIONES Y CLÁUSULAS CONTRACTUALES RIC SEC:', 14, clauseY);
+    doc.text(
+      data.serviceType === 'home_service'
+        ? 'CONDICIONES Y GARANTÍA SERVICIO DOMICILIARIO (RIC N°10):'
+        : 'CONDICIONES Y CLÁUSULAS CONTRACTUALES RIC SEC:',
+      14,
+      clauseY
+    );
     clauseY += 5;
 
     data.clauses.forEach((c) => {

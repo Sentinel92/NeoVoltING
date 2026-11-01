@@ -33,6 +33,7 @@ import { DashboardModule } from './components/DashboardModule';
 import { ToolsModule } from './components/ToolsModule';
 import { MobileDrawer } from './components/MobileDrawer';
 import { TabSkeletonScreen } from './components/TabSkeletonScreen';
+import { BasicHomeServicesTab } from './components/BasicHomeServicesTab';
 import { motion, AnimatePresence } from 'motion/react';
 import { AuthProvider, useAuth } from './lib/AuthContext';
 
@@ -782,6 +783,15 @@ function AppContent() {
     { id: 'b8', name: 'Cable EVA 2.5mm² Verde (Metro)', quantity: 30, price: 690, category: 'CONDUCTORES' },
   ]);
 
+  // Home Service Mode (sin tableros)
+  const [isHomeServiceMode, setIsHomeServiceMode] = useState<boolean>(false);
+
+  const handleTransferHomeServicesToQuote = (items: BudgetItem[], _laborAmount: number, isHomeMode: boolean = true) => {
+    setBudgetItems(items);
+    setIsHomeServiceMode(isHomeMode);
+    setActiveTab('quote');
+  };
+
   // Customer Details
   const [customer, setCustomer] = useState<CustomerDetails>({
     name: 'Juan Pérez Ovalle',
@@ -1456,6 +1466,19 @@ function AppContent() {
                     />
                   );
 
+                case 'home_services':
+                case 'basic_services':
+                case 'enchufes_luminaria':
+                  return (
+                    <BasicHomeServicesTab
+                      customer={customer}
+                      setCustomer={setCustomer}
+                      contractor={contractor}
+                      onTransferToQuote={handleTransferHomeServicesToQuote}
+                      onNavigateToTab={setActiveTab}
+                    />
+                  );
+
                 case 'quote':
                 case '8':
                   return (
@@ -1468,6 +1491,9 @@ function AppContent() {
                       setContractor={setContractor}
                       rooms={rooms}
                       highAppliances={highAppliances}
+                      isHomeServiceMode={isHomeServiceMode}
+                      setIsHomeServiceMode={setIsHomeServiceMode}
+                      onNavigateToTab={setActiveTab}
                     />
                   );
 

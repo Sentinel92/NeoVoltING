@@ -34,6 +34,7 @@ export const LaborPricingCalculatorModal: React.FC<LaborPricingCalculatorModalPr
 
   // Multiplier Factor (1.0 = Normal, 1.25 = Dificultad Media, 1.5 = Alta / Urgencia)
   const [difficultyMultiplier, setDifficultyMultiplier] = useState<number>(1.0);
+  const [includeBoardInLabor, setIncludeBoardInLabor] = useState<boolean>(true);
   const [includeTe1InLabor, setIncludeTe1InLabor] = useState<boolean>(true);
   const [includeGroundingInLabor, setIncludeGroundingInLabor] = useState<boolean>(true);
 
@@ -43,7 +44,7 @@ export const LaborPricingCalculatorModal: React.FC<LaborPricingCalculatorModalPr
   const subtotalLights = totalLights * ratePerLightPoint;
   const subtotalSockets = totalSockets * ratePerSocketPoint;
   const subtotalHeavy = totalHeavy * ratePerHeavyCircuit;
-  const subtotalBoard = rateBoardAssembly;
+  const subtotalBoard = includeBoardInLabor ? rateBoardAssembly : 0;
   const subtotalGrounding = includeGroundingInLabor ? rateGroundingRod : 0;
   const subtotalTe1 = includeTe1InLabor ? rateTe1Process : 0;
 
@@ -173,19 +174,32 @@ export const LaborPricingCalculatorModal: React.FC<LaborPricingCalculatorModalPr
                 </div>
               </div>
 
-              {/* TDA Assembly */}
+              {/* TDA Assembly (Optional for jobs without distribution boards) */}
               <div className="bg-slate-900 p-3 rounded-xl border border-slate-800 flex flex-col justify-between space-y-1">
                 <div className="flex justify-between items-center text-slate-300">
-                  <span className="font-semibold">Armado & Montaje TDA:</span>
-                  <span className="font-mono text-emerald-400 font-bold">Base Obra</span>
+                  <label className="flex items-center gap-1.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={includeBoardInLabor}
+                      onChange={(e) => setIncludeBoardInLabor(e.target.checked)}
+                      className="rounded accent-cyan-500"
+                    />
+                    <span className="font-semibold">Armado & Montaje Tablero (TDA):</span>
+                  </label>
+                  {!includeBoardInLabor && (
+                    <span className="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded">
+                      Sin Tablero
+                    </span>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-slate-500">$</span>
                   <input
                     type="number"
+                    disabled={!includeBoardInLabor}
                     value={rateBoardAssembly}
                     onChange={(e) => setRateBoardAssembly(Number(e.target.value) || 0)}
-                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-white font-bold text-right"
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-white font-bold text-right disabled:opacity-40"
                   />
                   <span className="text-slate-500 font-mono text-[10px]">global</span>
                 </div>

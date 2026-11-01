@@ -20,9 +20,16 @@ import {
   Edit3,
   RotateCcw,
   Check,
+  Home,
+  Plug,
+  Lightbulb,
+  Zap,
+  Sparkles,
+  ArrowRight,
 } from 'lucide-react';
 import { LaborPricingCalculatorModal } from './LaborPricingCalculatorModal';
 import { downloadPdfFromElement, generatePdfBlob, exportQuoteJsPdf } from '../utils/pdfGenerator';
+import { HOME_SERVICE_CONTRACT_CLAUSES } from './BasicHomeServicesTab';
 
 export interface ContractClause {
   id: string;
@@ -78,6 +85,9 @@ interface CotizadorTabProps {
   setContractor: React.Dispatch<React.SetStateAction<ContractorConfig>>;
   rooms?: RoomData[];
   highAppliances?: HighAppliance[];
+  isHomeServiceMode?: boolean;
+  setIsHomeServiceMode?: (val: boolean) => void;
+  onNavigateToTab?: (tabId: string) => void;
 }
 
 export const CotizadorTab: React.FC<CotizadorTabProps> = ({
@@ -89,15 +99,52 @@ export const CotizadorTab: React.FC<CotizadorTabProps> = ({
   setContractor,
   rooms = [],
   highAppliances = [],
+  isHomeServiceMode = false,
+  setIsHomeServiceMode,
+  onNavigateToTab,
 }) => {
   const [isClientView, setIsClientView] = useState(true);
+  const [isHomeMode, setIsHomeMode] = useState<boolean>(isHomeServiceMode);
   const [includeContingency15, setIncludeContingency15] = useState(true);
   const [laborCost, setLaborCost] = useState(180000);
   const [customMaterialsTotal, setCustomMaterialsTotal] = useState<number | null>(null);
   const [showClauses, setShowClauses] = useState(true);
   const [isEditingClauses, setIsEditingClauses] = useState(false);
-  const [clauses, setClauses] = useState<ContractClause[]>(DEFAULT_CLAUSES);
+  const [clauses, setClauses] = useState<ContractClause[]>(
+    isHomeServiceMode ? HOME_SERVICE_CONTRACT_CLAUSES : DEFAULT_CLAUSES
+  );
   const [isLaborModalOpen, setIsLaborModalOpen] = useState(false);
+
+  React.useEffect(() => {
+    if (isHomeServiceMode !== undefined) {
+      setIsHomeMode(isHomeServiceMode);
+      if (isHomeServiceMode) {
+        setClauses(HOME_SERVICE_CONTRACT_CLAUSES);
+      }
+    }
+  }, [isHomeServiceMode]);
+
+  const handleToggleMode = (newMode: boolean) => {
+    setIsHomeMode(newMode);
+    if (setIsHomeServiceMode) setIsHomeServiceMode(newMode);
+    if (newMode) {
+      setClauses(HOME_SERVICE_CONTRACT_CLAUSES);
+    } else {
+      setClauses(DEFAULT_CLAUSES);
+    }
+  };
+
+  const handleAddQuickHomeService = (preset: { name: string; price: number; category: string }) => {
+    const newItem: BudgetItem = {
+      id: Date.now().toString() + Math.random().toString(36).substring(2, 6),
+      name: preset.name,
+      quantity: 1,
+      price: preset.price,
+      category: preset.category,
+      unit: 'punto',
+    };
+    setItems([...items, newItem]);
+  };
 
   // Client Signature State
   const [clientSignature, setClientSignature] = useState<ClientSignature>({
@@ -173,6 +220,7 @@ export const CotizadorTab: React.FC<CotizadorTabProps> = ({
         includeContingency15,
         clauses,
         signatureDataUrl: clientSignature.signatureDataUrl,
+        serviceType: isHomeMode ? 'home_service' : 'board',
       });
     } catch (err) {
       console.warn('Fallback a renderizado DOM para PDF:', err);
@@ -207,6 +255,7 @@ export const CotizadorTab: React.FC<CotizadorTabProps> = ({
           includeContingency15,
           clauses,
           signatureDataUrl: clientSignature.signatureDataUrl,
+          serviceType: isHomeMode ? 'home_service' : 'board',
         });
       } catch (e) {
         console.warn('Fallback generating blob', e);
@@ -225,8 +274,8 @@ export const CotizadorTab: React.FC<CotizadorTabProps> = ({
         if (navigator.canShare && navigator.canShare({ files: [file] })) {
           try {
             await navigator.share({
-              title: `Cotización Eléctrica SEC - ${contractor.companyName}`,
-              text: `Hola ${customer.name || 'Estimado/a'}, te adjunto la cotización formal de trabajos eléctricos en PDF de ${contractor.companyName}.`,
+              title: `${isHomeMode ? 'Cotización Instalación Domiciliaria' : 'Cotización Eléctrica SEC'} - ${contractor.companyName}`,
+              text: `Hola ${customer.name || 'Estimado/a'}, te adjunto la cotización formal en PDF de ${contractor.companyName}.`,
               files: [file],
             });
             return;
@@ -244,7 +293,7 @@ export const CotizadorTab: React.FC<CotizadorTabProps> = ({
 
       // Open WhatsApp Web / App directly to client's phone if provided
       const text = encodeURIComponent(
-        `Hola *${customer.name || 'Estimado/a'}*, adjunto la propuesta y cotización de servicios eléctricos de *${
+        `Hola *${customer.name || 'Estimado/a'}*, adjunto la propuesta y cotización de ${isHomeMode ? 'servicios de instalación domiciliaria (enchufes / iluminación)' : 'servicios eléctricos'} de *${
           contractor.companyName
         }* para la obra en ${customer.address || 'su domicilio'}:
 
@@ -298,6 +347,7 @@ Atentamente,
           includeContingency15,
           clauses,
           signatureDataUrl: clientSignature.signatureDataUrl,
+          serviceType: isHomeMode ? 'home_service' : 'board',
         });
       } catch (e) {
         console.warn('Fallback generating blob', e);
@@ -379,6 +429,34 @@ Teléfono: ${contractor.phone}`
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
+          {/* Service Mode Selector Toggle */}
+          <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-2xl border border-slate-800">
+            <button
+              type="button"
+              onClick={() => handleToggleMode(false)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                !isHomeMode
+                  ? 'bg-slate-800 text-white shadow'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Zap className="w-3.5 h-3.5 text-amber-400" />
+              <span>Tablero / Proyecto General</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleToggleMode(true)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                isHomeMode
+                  ? 'bg-cyan-600 text-white shadow'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Home className="w-3.5 h-3.5 text-cyan-200" />
+              <span>Servicios Hogar (Sin Tablero)</span>
+            </button>
+          </div>
+
           <button
             onClick={() => setIsLaborModalOpen(true)}
             className="flex items-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold px-3.5 py-2 rounded-xl shadow transition-all"
@@ -420,6 +498,38 @@ Teléfono: ${contractor.phone}`
         </div>
       </div>
 
+      {/* Home Service Informative Banner when active */}
+      {isHomeMode && (
+        <div className="print:hidden bg-gradient-to-r from-cyan-950/70 via-slate-900 to-cyan-950/50 border border-cyan-500/40 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs shadow-lg">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-cyan-500/20 text-cyan-400 rounded-xl shrink-0">
+              <Plug className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-white text-sm">Modo Instalación Domiciliaria Activo (Sin Tablero)</span>
+                <span className="bg-cyan-500/20 text-cyan-300 font-bold text-[10px] px-2 py-0.5 rounded-full border border-cyan-500/30">
+                  RIC N°10 SEC
+                </span>
+              </div>
+              <p className="text-slate-300 text-xs mt-0.5">
+                Presupuesto configurado para instalación o recambio de enchufes, luminarias, interruptores y canalizaciones en casa sin intervenir tableros.
+              </p>
+            </div>
+          </div>
+          {onNavigateToTab && (
+            <button
+              onClick={() => onNavigateToTab('home_services')}
+              className="flex items-center gap-1.5 bg-cyan-600 hover:bg-cyan-500 text-white font-bold px-3 py-1.5 rounded-xl shadow shrink-0 self-start sm:self-auto transition-all"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+              <span>Configurador de Puntos & Packs</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Corporate Document Frame (Print Friendly Container) */}
       <div
         ref={quoteDocRef}
@@ -447,7 +557,11 @@ Teléfono: ${contractor.phone}`
 
           <div className="text-right sm:self-start bg-slate-950 print:bg-slate-100 p-4 rounded-2xl border border-slate-800 print:border-slate-300 min-w-[220px]">
             <span className="text-[10px] uppercase font-bold text-fuchsia-400 print:text-black block">
-              {contractor.isSecCertified !== false ? 'Presupuesto Comercial SEC' : 'Presupuesto Trabajo Eléctrico'}
+              {isHomeMode
+                ? 'Presupuesto Servicios Domiciliarios SEC (Sin Tablero)'
+                : contractor.isSecCertified !== false
+                ? 'Presupuesto Comercial SEC'
+                : 'Presupuesto Trabajo Eléctrico'}
             </span>
             <span className="text-lg font-mono font-black text-white print:text-black block">
               COT-{Date.now().toString().slice(-6)}
@@ -542,6 +656,107 @@ Teléfono: ${contractor.phone}`
             )}
           </div>
 
+          {/* Quick Add Home Service Presets when in home mode */}
+          {isHomeMode && !isClientView && (
+            <div className="print:hidden bg-slate-950/80 border border-slate-800 rounded-2xl p-3 flex flex-wrap items-center gap-2 text-xs">
+              <span className="text-slate-400 font-semibold flex items-center gap-1">
+                <Plus className="w-3.5 h-3.5 text-cyan-400" />
+                <span>Agregar Servicio Rápido:</span>
+              </span>
+              <button
+                type="button"
+                onClick={() =>
+                  handleAddQuickHomeService({
+                    name: 'Punto de Enchufe Doble 10/16A (con moldura y cable EVA)',
+                    price: 13500,
+                    category: 'ENCHUFES',
+                  })
+                }
+                className="bg-slate-900 hover:bg-slate-800 border border-slate-700 text-cyan-300 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors"
+              >
+                + Enchufe c/ moldura ($13.500)
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  handleAddQuickHomeService({
+                    name: 'Recambio Placa Enchufe Doble 10/16A existente',
+                    price: 5800,
+                    category: 'ENCHUFES',
+                  })
+                }
+                className="bg-slate-900 hover:bg-slate-800 border border-slate-700 text-cyan-300 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors"
+              >
+                + Recambio Enchufe ($5.800)
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  handleAddQuickHomeService({
+                    name: 'Foco Plafón LED Techo 18W/24W',
+                    price: 11000,
+                    category: 'LUMINARIAS',
+                  })
+                }
+                className="bg-slate-900 hover:bg-slate-800 border border-slate-700 text-amber-300 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors"
+              >
+                + Plafón LED ($11.000)
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  handleAddQuickHomeService({
+                    name: 'Foco Downlight LED Embutido',
+                    price: 9500,
+                    category: 'LUMINARIAS',
+                  })
+                }
+                className="bg-slate-900 hover:bg-slate-800 border border-slate-700 text-amber-300 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors"
+              >
+                + Downlight Embutido ($9.500)
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  handleAddQuickHomeService({
+                    name: 'Lámpara Colgante / Apliqué Muro',
+                    price: 7500,
+                    category: 'LUMINARIAS',
+                  })
+                }
+                className="bg-slate-900 hover:bg-slate-800 border border-slate-700 text-amber-300 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors"
+              >
+                + Lámpara / Apliqué ($7.500)
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  handleAddQuickHomeService({
+                    name: 'Enchufe Exterior Intemperie IP55 con tapa',
+                    price: 19500,
+                    category: 'ENCHUFES',
+                  })
+                }
+                className="bg-slate-900 hover:bg-slate-800 border border-slate-700 text-cyan-300 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors"
+              >
+                + Enchufe Exterior IP55 ($19.500)
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  handleAddQuickHomeService({
+                    name: 'Foco Proyector LED Exterior Sensor PIR',
+                    price: 26000,
+                    category: 'LUMINARIAS',
+                  })
+                }
+                className="bg-slate-900 hover:bg-slate-800 border border-slate-700 text-amber-300 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors"
+              >
+                + Foco Proyector PIR ($26.000)
+              </button>
+            </div>
+          )}
+
           {!isClientView ? (
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
@@ -607,7 +822,9 @@ Teléfono: ${contractor.phone}`
             <div className="bg-slate-950/80 print:bg-slate-50 p-4 rounded-2xl border border-slate-800 print:border-slate-300 space-y-3 text-xs">
               <div className="flex justify-between items-center py-1 border-b border-slate-800 print:border-slate-300">
                 <span className="font-semibold text-slate-300 print:text-black">
-                  Materiales, Protecciones DIN, Conductores EVA y Canalizaciones:
+                  {isHomeMode
+                    ? 'Materiales, Conectores, Accesorios y Canalizaciones (Enchufes, Focos, Placas):'
+                    : 'Materiales, Protecciones DIN, Conductores EVA y Canalizaciones:'}
                 </span>
                 <span className="font-mono font-bold text-emerald-400 print:text-black">
                   ${effectiveMaterialsTotal.toLocaleString('es-CL')} CLP
@@ -616,7 +833,9 @@ Teléfono: ${contractor.phone}`
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center py-1 border-b border-slate-800 print:border-slate-300 gap-2">
                 <div className="flex items-center gap-2">
                   <span className="font-semibold text-slate-300 print:text-black">
-                    Mano de Obra, Montaje de Tablero y Pruebas SEC:
+                    {isHomeMode
+                      ? 'Mano de Obra Instalación Domiciliaria y Pruebas RIC N°10:'
+                      : 'Mano de Obra, Montaje de Tablero y Pruebas SEC:'}
                   </span>
                   <button
                     type="button"
