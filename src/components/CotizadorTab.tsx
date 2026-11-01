@@ -26,9 +26,11 @@ import {
   Zap,
   Sparkles,
   ArrowRight,
+  ShoppingCart,
 } from 'lucide-react';
 import { LaborPricingCalculatorModal } from './LaborPricingCalculatorModal';
-import { downloadPdfFromElement, generatePdfBlob, exportQuoteJsPdf } from '../utils/pdfGenerator';
+import { downloadPdfFromElement, generatePdfBlob, exportQuoteJsPdf, ClientMaterialItem } from '../utils/pdfGenerator';
+import { ClientMaterialsModal } from './ClientMaterialsModal';
 import { HOME_SERVICE_CONTRACT_CLAUSES } from './BasicHomeServicesTab';
 
 export interface ContractClause {
@@ -207,7 +209,26 @@ export const CotizadorTab: React.FC<CotizadorTabProps> = ({
   };
 
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [isClientMaterialsModalOpen, setIsClientMaterialsModalOpen] = useState(false);
   const quoteDocRef = useRef<HTMLDivElement>(null);
+
+  const getQuoteMaterialsList = (): ClientMaterialItem[] => {
+    // Filter out items that are purely labor or informative
+    const nonLaborItems = items.filter(
+      (i) => i.category !== 'MANO_DE_OBRA' && i.category !== 'INSUMOS_CLIENTE'
+    );
+
+    const itemsToMap = nonLaborItems.length > 0 ? nonLaborItems : items;
+
+    return itemsToMap.map((i, idx) => ({
+      id: `quote_mat_${idx}_${i.id}`,
+      name: i.name,
+      specification: 'Certificado con Sello SEC vigente / Pliegos Técnicos RIC',
+      quantity: i.quantity,
+      unit: i.unit || 'unid.',
+      suggestedStoreOrBrand: 'Sodimac / Easy / Distribuidor Eléctrico (Dartel, RHona, Byp)',
+    }));
+  };
 
   const handleDownloadPdf = async () => {
     setIsGeneratingPdf(true);
@@ -464,6 +485,16 @@ Teléfono: ${contractor.phone}`
           >
             <Calculator className="w-4 h-4 text-amber-300" />
             <span>Tarifario & Sugerencia Mano Obra</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setIsClientMaterialsModalOpen(true)}
+            className="flex items-center gap-2 bg-slate-950 hover:bg-slate-800 text-cyan-300 hover:text-cyan-200 border border-slate-700 hover:border-cyan-500/50 text-xs font-bold px-3.5 py-2 rounded-xl shadow transition-all active:scale-95"
+            title="Generar y descargar lista de materiales para que el cliente compre directamente en tienda"
+          >
+            <ShoppingCart className="w-4 h-4 text-cyan-400" />
+            <span>Lista Materiales Cliente</span>
           </button>
 
           <button
@@ -1116,6 +1147,20 @@ Teléfono: ${contractor.phone}`
         highAppliances={highAppliances}
         currentLaborCost={laborCost}
         onApplyLaborCost={(newCost) => setLaborCost(newCost)}
+      />
+
+      {/* Client Materials Shopping List Modal */}
+      <ClientMaterialsModal
+        isOpen={isClientMaterialsModalOpen}
+        onClose={() => setIsClientMaterialsModalOpen(false)}
+        customer={customer}
+        contractor={contractor}
+        initialMaterials={getQuoteMaterialsList()}
+        projectTitle={
+          isHomeMode
+            ? 'Servicios Domiciliarios de Instalación (Sin Tablero)'
+            : 'Proyecto Tablero e Instalaciones Eléctricas SEC'
+        }
       />
     </div>
   );

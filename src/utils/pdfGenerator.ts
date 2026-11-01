@@ -4,6 +4,7 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 // @ts-ignore
 import html2pdf from 'html2pdf.js';
+import { CustomerDetails, ContractorConfig } from '../types';
 
 export interface PdfOptions {
   filename?: string;
@@ -713,6 +714,189 @@ export async function exportQuoteJsPdf(data: {
 
   const clientSlug = (data.customer.name || 'Cliente').replace(/[^a-zA-Z0-9]/g, '_');
   doc.save(`Cotizacion_Oficial_${clientSlug}.pdf`);
+  return doc;
+}
+
+export interface ClientMaterialItem {
+  id: string;
+  name: string;
+  specification: string;
+  quantity: number;
+  unit: string;
+  suggestedStoreOrBrand?: string;
+}
+
+export interface ClientMaterialsListData {
+  customer: CustomerDetails;
+  contractor: ContractorConfig;
+  materials: ClientMaterialItem[];
+  projectTitle?: string;
+  notes?: string;
+  generalTips?: string[];
+}
+
+/**
+ * Generates an official, high-quality client shopping checklist PDF
+ * for clients who choose to purchase their own electrical materials at retail stores (Sodimac, Easy, Construmart, Ferreterías).
+ */
+export async function exportClientMaterialsListJsPdf(data: ClientMaterialsListData): Promise<jsPDF> {
+  const doc = new jsPDF({
+    orientation: 'portrait',
+    unit: 'mm',
+    format: 'a4',
+  });
+
+  // 1. Header with Contractor Branding
+  doc.setFillColor(11, 15, 25); // Dark blue / slate 950
+  doc.rect(0, 0, 210, 32, 'F');
+
+  // Accent line
+  doc.setFillColor(6, 182, 212); // Cyan 500
+  doc.rect(0, 32, 210, 2, 'F');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(13);
+  doc.setTextColor(255, 255, 255);
+  doc.text(data.contractor.companyName || 'NEOVOLT INGENIERÍA ELÉCTRICA', 14, 12);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(148, 163, 184); // Slate 400
+  const secText =
+    data.contractor.isSecCertified !== false
+      ? `Instalador Autorizado SEC Clase ${data.contractor.secClass || 'A'} | Licencia: ${data.contractor.secLicense || '123456'}`
+      : `${data.contractor.customProfessionalTitle || 'Técnico Especialista en Electricidad'}`;
+  doc.text(secText, 14, 18);
+  doc.text(`RUT: ${data.contractor.rut || 'N/A'} | Teléfono: ${data.contractor.phone || 'N/A'} | Email: ${data.contractor.senderEmail || 'N/A'}`, 14, 23);
+
+  // Document Badge on right
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.setTextColor(6, 182, 212);
+  doc.text('LISTA DE COMPRA DE MATERIALES', 196, 12, { align: 'right' });
+  doc.setFontSize(7.5);
+  doc.setTextColor(255, 255, 255);
+  doc.text('PARA ADQUISICIÓN POR EL CLIENTE', 196, 17, { align: 'right' });
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(148, 163, 184);
+  doc.text(`Fecha: ${new Date().toLocaleDateString('es-CL')}`, 196, 23, { align: 'right' });
+
+  // 2. Client & Project Info Block
+  doc.setFillColor(248, 250, 252); // Slate 50
+  doc.setDrawColor(226, 232, 240); // Slate 200
+  doc.roundedRect(14, 38, 182, 20, 2, 2, 'FD');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.setTextColor(15, 23, 42);
+  doc.text('DATOS DEL CLIENTE Y UBICACIÓN:', 18, 44);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(51, 65, 85);
+  doc.text(`Cliente: ${data.customer.name || 'Cliente Particular'}`, 18, 50);
+  doc.text(`Dirección / Inmueble: ${data.customer.address || 'Domicilio Particular'}`, 18, 54);
+  doc.text(`Teléfono: ${data.customer.phone || 'N/A'}`, 115, 50);
+  doc.text(`Proyecto: ${data.projectTitle || 'Instalación Básica Domiciliaria (Sin Tablero)'}`, 115, 54);
+
+  // 3. Table of materials with checkbox for store purchase
+  const tableData = data.materials.map((item, idx) => [
+    `[  ]`, // Printable checkbox box
+    (idx + 1).toString(),
+    item.name,
+    item.specification || 'Certificado SEC con sello visible',
+    item.quantity.toString(),
+    item.unit || 'unid.',
+    item.suggestedStoreOrBrand || 'BTicino / Schneider / Sodimac / Easy',
+  ]);
+
+  autoTable(doc, {
+    startY: 62,
+    head: [['Check', '#', 'Material / Artefacto', 'Especificación Técnica & Medida (RIC SEC)', 'Cant.', 'Unid.', 'Marca / Tienda Sugerida']],
+    body: tableData,
+    theme: 'grid',
+    headStyles: {
+      fillColor: [11, 15, 25],
+      textColor: [255, 255, 255],
+      fontStyle: 'bold',
+      fontSize: 8,
+      halign: 'left',
+    },
+    styles: {
+      fontSize: 7.5,
+      cellPadding: 2.2,
+      textColor: [15, 23, 42],
+      lineColor: [203, 213, 225],
+      lineWidth: 0.2,
+    },
+    columnStyles: {
+      0: { cellWidth: 12, halign: 'center', fontStyle: 'bold' },
+      1: { cellWidth: 8, halign: 'center' },
+      2: { cellWidth: 50, fontStyle: 'bold' },
+      3: { cellWidth: 52 },
+      4: { cellWidth: 12, halign: 'center', fontStyle: 'bold' },
+      5: { cellWidth: 16, halign: 'center' },
+      6: { cellWidth: 32 },
+    },
+  });
+
+  let finalY = (doc as any).lastAutoTable ? (doc as any).lastAutoTable.finalY + 6 : 130;
+
+  if (finalY > 215) {
+    doc.addPage();
+    finalY = 20;
+  }
+
+  // 4. Shopping Tips & SEC Compliance Box
+  doc.setFillColor(239, 246, 255); // Blue 50
+  doc.setDrawColor(191, 219, 254); // Blue 200
+  doc.roundedRect(14, finalY, 182, 38, 2, 2, 'FD');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.setTextColor(30, 64, 175); // Blue 800
+  doc.text('GUÍA Y RECOMENDACIONES IMPORTANTES PARA SU COMPRA EN TIENDA:', 18, finalY + 6);
+
+  const tips = data.generalTips || [
+    '1. EXIJA SELLO SEC: Todo artefacto (enchufes, interruptores, focos LED) debe tener sello QR de la SEC en el empaque.',
+    '2. CONDUCTORES LIBRES DE HALÓGENO: Solicitar conductor de cobre EVA / H07Z1-K de 2.5 mm² para enchufes y 1.5 mm² para luces. No comprar cable THHN para vivienda.',
+    '3. MARCAS RECOMENDADAS: En placas y módulos preferir BTicino (Modus Pro / Matix), Schneider (Marisio) o Legrand. En cables: Nexans, Covisa o Madeco.',
+    '4. ANTE CUALQUIER DUDA: Si en la tienda no encuentra el código exacto, llame o envíe foto por WhatsApp a su instalador para confirmar compatibilidad antes de pagar.',
+  ];
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7);
+  doc.setTextColor(30, 58, 138); // Blue 900
+  let tipY = finalY + 12;
+  tips.forEach((tip) => {
+    const splitTip = doc.splitTextToSize(tip, 174);
+    doc.text(splitTip, 18, tipY);
+    tipY += splitTip.length * 3.5 + 1.2;
+  });
+
+  // Notes if any
+  if (data.notes) {
+    const noteY = finalY + 42;
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(7.5);
+    doc.setTextColor(71, 85, 105);
+    doc.text(`Nota adicional del Instalador: ${data.notes}`, 14, noteY);
+  }
+
+  // 5. Contact & signature footer
+  const footerY = 280;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7);
+  doc.setTextColor(148, 163, 184);
+  doc.text(
+    `Documento técnico emitido por ${data.contractor.companyName} | Fono soporte: ${data.contractor.phone} | www.sec.gob.cl`,
+    105,
+    footerY,
+    { align: 'center' }
+  );
+
+  const clientSlug = (data.customer.name || 'Cliente').replace(/[^a-zA-Z0-9]/g, '_');
+  doc.save(`Lista_Materiales_Cliente_${clientSlug}.pdf`);
   return doc;
 }
 
